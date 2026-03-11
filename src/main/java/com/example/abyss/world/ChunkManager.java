@@ -42,11 +42,19 @@ public class ChunkManager {
 
     public ChunkManager(long seed) {
         this.generatorLocal = ThreadLocal.withInitial(() -> new ProceduralGenerator(seed));
-        this.taskQueue = new KeyedTaskQueue<>("ChunkGen", key -> {
-            ProceduralGenerator gen = generatorLocal.get();
-            return new VoxelChunk(key.cx(), key.cy(), key.cz(),
-                    gen.generateChunk(key.cx(), key.cy(), key.cz()));
-        });
+        this.taskQueue = KeyedTaskQueue.<ChunkKey, VoxelChunk>builder()
+                .threadNamePrefix("ChunkGen")
+                .build();
+    }
+
+    // ----------------------------------------------------------------
+    // Internal helpers
+    // ----------------------------------------------------------------
+
+    private VoxelChunk buildChunk(ChunkKey key) {
+        ProceduralGenerator gen = generatorLocal.get();
+        return new VoxelChunk(key.cx(), key.cy(), key.cz(),
+                gen.generateChunk(key.cx(), key.cy(), key.cz()));
     }
 
     // ----------------------------------------------------------------
@@ -75,8 +83,8 @@ public class ChunkManager {
             return awaited;
         }
 
-        // Not pending either — generate synchronously via the queue's factory
-        VoxelChunk chunk = taskQueue.computeNow(key);
+        // Not pending either — generate synchronously
+        VoxelChunk chunk = taskQueue.computeNow(key, () -> buildChunk(key));
         loaded.put(key, chunk);
         return chunk;
     }
@@ -102,7 +110,7 @@ public class ChunkManager {
     public boolean requestChunkAsync(int cx, int cy, int cz) {
         ChunkKey key = new ChunkKey(cx, cy, cz);
         if (loaded.containsKey(key)) return false;
-        return taskQueue.submit(key);
+        return taskQueue.submit(key, () -> buildChunk(key));
     }
 
     /**

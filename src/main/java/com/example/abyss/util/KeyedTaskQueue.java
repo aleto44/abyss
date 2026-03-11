@@ -10,15 +10,30 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
  * A generic, keyed asynchronous task queue backed by a fixed thread pool.
  * <p>
- * Callers submit keyed tasks via {@link #submit(Object)}.  Completed
- * results are collected on the main thread via {@link #pollCompleted()}.
- * Duplicate submissions (same key) are silently ignored.
+ * Works like a normal work queue — call {@link #submit(Object, Supplier)} with
+ * a key and a unit of work. Duplicate submissions for the same key are silently
+ * ignored until that key is forgotten or cancelled. Completed results are
+ * collected on the main thread via {@link #pollCompleted()}.
  * </p>
+ *
+ * <pre>{@code
+ * // Setup (once)
+ * KeyedTaskQueue<ChunkKey, VoxelChunk> queue = KeyedTaskQueue
+ *     .<ChunkKey, VoxelChunk>builder()
+ *     .threadNamePrefix("ChunkGen")
+ *     .build();
+ *
+ * // Per-frame
+ * queue.submit(key, () -> generateChunk(key));   // non-blocking
+ * for (var result : queue.pollCompleted()) {      // drain results
+ *     loaded.put(result.key(), result.value());
+ * }
+ * }</pre>
  *
  * @param <K> the key type used to identify and deduplicate tasks
  * @param <V> the result type produced by each task
@@ -34,32 +49,52 @@ public class KeyedTaskQueue<K, V> {
     /** The thread pool that executes tasks. */
     private final ExecutorService pool;
 
-    /** Factory that turns a key into the actual work to perform. */
-    private final Function<K, V> taskFactory;
-
-    /**
-     * @param threadNamePrefix prefix for worker thread names (e.g. "ChunkGen")
-     * @param threadCount      number of worker threads ({@code <= 0} defaults to cores − 1, min 1)
-     * @param taskFactory      function that produces a result for a given key;
-     *                         called on a worker thread
-     */
-    public KeyedTaskQueue(String threadNamePrefix, int threadCount, Function<K, V> taskFactory) {
-        this.taskFactory = taskFactory;
-        int threads = threadCount > 0
-                ? threadCount
+    private KeyedTaskQueue(Builder<K, V> builder) {
+        int threads = builder.threadCount > 0
+                ? builder.threadCount
                 : Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
         this.pool = Executors.newFixedThreadPool(threads, r -> {
-            Thread t = new Thread(r, threadNamePrefix);
+            Thread t = new Thread(r, builder.threadNamePrefix);
             t.setDaemon(true);
             return t;
         });
     }
 
-    /**
-     * Convenience constructor that auto-sizes the pool to (cores − 1).
-     */
-    public KeyedTaskQueue(String threadNamePrefix, Function<K, V> taskFactory) {
-        this(threadNamePrefix, 0, taskFactory);
+    // ----------------------------------------------------------------
+    // Builder
+    // ----------------------------------------------------------------
+
+    /** Returns a new builder for constructing a {@link KeyedTaskQueue}. */
+    public static <K, V> Builder<K, V> builder() {
+        return new Builder<>();
+    }
+
+    public static final class Builder<K, V> {
+
+        private String threadNamePrefix = "KeyedTaskQueue";
+        private int threadCount = 0; // 0 = auto (cores - 1)
+
+        private Builder() {}
+
+        /** Prefix applied to worker thread names. Defaults to {@code "KeyedTaskQueue"}. */
+        public Builder<K, V> threadNamePrefix(String prefix) {
+            this.threadNamePrefix = prefix;
+            return this;
+        }
+
+        /**
+         * Fixed number of worker threads. Pass {@code 0} (or omit) to
+         * auto-size to {@code max(1, availableProcessors − 1)}.
+         */
+        public Builder<K, V> threadCount(int count) {
+            this.threadCount = count;
+            return this;
+        }
+
+        /** Builds the {@link KeyedTaskQueue}. */
+        public KeyedTaskQueue<K, V> build() {
+            return new KeyedTaskQueue<>(this);
+        }
     }
 
     // ----------------------------------------------------------------
@@ -67,15 +102,16 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /**
-     * Submits a task for the given key if it has not already been submitted
-     * or completed.  Non-blocking.
+     * Submits work for the given key if that key has not already been submitted
+     * or completed. Non-blocking.
      *
-     * @return {@code true} if a new task was enqueued
+     * @param key  identifies this unit of work for deduplication purposes
+     * @param work the computation to run on a worker thread
+     * @return {@code true} if the work was enqueued; {@code false} if already known
      */
-    public boolean submit(K key) {
+    public boolean submit(K key, Supplier<V> work) {
         if (!knownKeys.add(key)) return false;
-        CompletableFuture<V> future = CompletableFuture.supplyAsync(
-                () -> taskFactory.apply(key), pool);
+        CompletableFuture<V> future = CompletableFuture.supplyAsync(work, pool);
         pending.put(key, future);
         return true;
     }
@@ -84,9 +120,7 @@ public class KeyedTaskQueue<K, V> {
     // Polling
     // ----------------------------------------------------------------
 
-    /**
-     * A completed result paired with its key.
-     */
+    /** A completed result paired with its key. */
     public record Result<K, V>(K key, V value) {}
 
     /**
@@ -103,23 +137,22 @@ public class KeyedTaskQueue<K, V> {
         while (it.hasNext()) {
             var entry = it.next();
             CompletableFuture<V> future = entry.getValue();
-            if (future.isDone()) {
-                it.remove();
-                if (future.isCancelled()) {
-                    knownKeys.remove(entry.getKey());
-                    continue;
-                }
-                if (future.isCompletedExceptionally()) {
-                    future.exceptionally(ex -> {
-                        System.err.println("KeyedTaskQueue task failed for " + entry.getKey()
-                                + ": " + ex.getMessage());
-                        return null;
-                    });
-                    knownKeys.remove(entry.getKey());
-                    continue;
-                }
-                results.add(new Result<>(entry.getKey(), future.join()));
+            if (!future.isDone()) continue;
+            it.remove();
+            if (future.isCancelled()) {
+                knownKeys.remove(entry.getKey());
+                continue;
             }
+            if (future.isCompletedExceptionally()) {
+                future.exceptionally(ex -> {
+                    System.err.println("KeyedTaskQueue task failed for "
+                            + entry.getKey() + ": " + ex.getMessage());
+                    return null;
+                });
+                knownKeys.remove(entry.getKey());
+                continue;
+            }
+            results.add(new Result<>(entry.getKey(), future.join()));
         }
         return results;
     }
@@ -129,11 +162,8 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /**
-     * If a task for {@code key} is pending, blocks until it completes and
-     * returns the result.  If no task is pending, returns {@code null}.
-     * <p>
-     * Does <b>not</b> submit a new task — use {@link #submit(Object)} first,
-     * or call {@link #computeNow(Object)} for an immediate synchronous run.
+     * If a task for {@code key} is in flight, blocks until it completes and
+     * returns the result. Returns {@code null} if no task is pending for that key.
      */
     public V awaitPending(K key) {
         CompletableFuture<V> future = pending.remove(key);
@@ -148,12 +178,12 @@ public class KeyedTaskQueue<K, V> {
     }
 
     /**
-     * Runs the task synchronously on the calling thread, bypassing the pool.
-     * Marks the key as known so future {@link #submit(Object)} calls are ignored.
+     * Runs {@code work} synchronously on the calling thread, bypassing the pool,
+     * and marks the key as known so future {@link #submit} calls are deduplicated.
      */
-    public V computeNow(K key) {
+    public V computeNow(K key, Supplier<V> work) {
         knownKeys.add(key);
-        return taskFactory.apply(key);
+        return work.get();
     }
 
     // ----------------------------------------------------------------
@@ -170,7 +200,7 @@ public class KeyedTaskQueue<K, V> {
     }
 
     /**
-     * Removes a key from the known set without cancelling.
+     * Forgets a completed key so it can be re-submitted.
      * Use when unloading a previously-completed result.
      */
     public void forget(K key) {
