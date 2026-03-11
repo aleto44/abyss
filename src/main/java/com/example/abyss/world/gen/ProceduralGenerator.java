@@ -1,9 +1,13 @@
 package com.example.abyss.world.gen;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.features.DeepExtremesFeatureProcessor;
+import com.example.abyss.world.gen.features.EdgeFeatureProcessor;
 import com.example.abyss.world.gen.features.ForestFeatureProcessor;
 import com.example.abyss.world.gen.features.HangingGardensFeatureProcessor;
 import com.example.abyss.world.gen.features.MyceliumFeatureProcessor;
+import com.example.abyss.world.gen.features.OceaniaFeatureProcessor;
+import com.example.abyss.world.gen.features.SkyWallsFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
 
@@ -86,9 +90,13 @@ public class ProceduralGenerator {
         boundaryNoise.SetFrequency(0.003f);
 
         // Register layer-specific feature processors (gen step 4)
+        featureProcessors.put(Layer.THE_EDGE, new EdgeFeatureProcessor(seed));
         featureProcessors.put(Layer.FOREST_DEPTHS, new ForestFeatureProcessor(seed));
         featureProcessors.put(Layer.HANGING_GARDENS, new HangingGardensFeatureProcessor(seed));
+        featureProcessors.put(Layer.SKY_WALLS, new SkyWallsFeatureProcessor(seed));
         featureProcessors.put(Layer.MYCELIUM, new MyceliumFeatureProcessor(seed));
+        featureProcessors.put(Layer.OCEANIA, new OceaniaFeatureProcessor(seed));
+        featureProcessors.put(Layer.DEEP_EXTREMES, new DeepExtremesFeatureProcessor(seed));
     }
 
     /**
@@ -105,22 +113,35 @@ public class ProceduralGenerator {
         int worldBaseY = chunkY * SIZE;
         int worldBaseZ = chunkZ * SIZE;
 
+        // Track the last frequency set on terrainNoise to avoid redundant calls
+        float lastFrequency = -1f;
+
         for (int ly = 0; ly < SIZE; ly++) {
             int wy = worldBaseY + ly;
+
+            // 1. Resolve layer config once per Y-slice (config only depends on Y)
+            Layer primaryLayer = Layer.forY(wy);
+            LayerConfig cfg = resolveConfig(wy, primaryLayer);
+
+            // Only update the terrain noise frequency when it actually changes
+            float freq = cfg.noiseFrequency();
+            if (freq != lastFrequency) {
+                terrainNoise.SetFrequency(freq);
+                lastFrequency = freq;
+            }
+
             for (int lz = 0; lz < SIZE; lz++) {
                 int wz = worldBaseZ + lz;
                 for (int lx = 0; lx < SIZE; lx++) {
                     int wx = worldBaseX + lx;
 
-                    // 1. Resolve layer config (with transition blending if applicable)
-                    LayerConfig cfg = resolveConfig(wy);
 
                     // 2. Evaluate combined density function
                     float density = evaluateDensity(wx, wy, wz, cfg);
                     data.setDensity(lx, ly, lz, density);
 
                     // 3. Assign voxel type
-                    VoxelType type = assignType(wx, wy, wz, density, cfg);
+                    VoxelType type = assignType(wx, wy, wz, density, cfg, primaryLayer);
                     data.setType(lx, ly, lz, type);
                 }
             }
@@ -143,13 +164,16 @@ public class ProceduralGenerator {
     /**
      * Returns the effective {@link LayerConfig} for a given world-Y,
      * blending between two layers if inside a transition zone.
+     *
+     * @param worldY       the world Y coordinate
+     * @param primaryLayer the layer already resolved via {@link Layer#forY(int)}
      */
-    private LayerConfig resolveConfig(int worldY) {
+    private LayerConfig resolveConfig(int worldY, Layer primaryLayer) {
         Layer.TransitionInfo ti = Layer.getTransition(worldY);
         if (ti != null) {
             return ti.blendedConfig();
         }
-        return Layer.forY(worldY).getConfig();
+        return primaryLayer.getConfig();
     }
 
     /**
@@ -165,9 +189,7 @@ public class ProceduralGenerator {
      * The cave term carves out pockets using ridged noise.
      */
     private float evaluateDensity(int wx, int wy, int wz, LayerConfig cfg) {
-        // Configure terrain noise per-voxel from the (possibly blended) layer config
-        terrainNoise.SetFrequency(cfg.noiseFrequency());
-
+        // Terrain noise (frequency already set per Y-slice in generateChunk)
         float terrainDensity = terrainNoise.GetNoise(wx, wy, wz) * cfg.noiseAmplitude()
                 + cfg.baseDensityThreshold();
 
@@ -201,7 +223,7 @@ public class ProceduralGenerator {
     /**
      * Given the final density, decide the discrete voxel type.
      */
-    private VoxelType assignType(int wx, int wy, int wz, float density, LayerConfig cfg) {
+    private VoxelType assignType(int wx, int wy, int wz, float density, LayerConfig cfg, Layer layer) {
         if (density > 0f) {
             // Solid – pick from dominant types via secondary noise
             VoxelType[] types = cfg.dominantVoxelTypes();
@@ -215,7 +237,6 @@ public class ProceduralGenerator {
         // Air – but may be water or hazard pocket
 
         // Oceania waterline: static water below the line
-        Layer layer = Layer.forY(wy);
         if (layer == Layer.OCEANIA && wy < OCEANIA_WATERLINE_Y) {
             return VoxelType.WATER;
         }

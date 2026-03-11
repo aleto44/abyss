@@ -3,6 +3,8 @@ package com.example.abyss.world;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.voxel.VoxelType;
 
+import java.util.List;
+
 /**
  * Top-level façade for the Abyss world.
  * <p>
@@ -16,7 +18,6 @@ public class AbyssWorld {
     private static final int CHUNK_SIZE = VoxelChunk.SIZE; // 32
 
     private final long seed;
-    private ProceduralGenerator generator;
     private ChunkManager chunkManager;
 
     public AbyssWorld(long seed) {
@@ -25,15 +26,14 @@ public class AbyssWorld {
 
     /** Initialise generation pipeline and chunk storage. Call once. */
     public void init() {
-        generator = new ProceduralGenerator(seed);
-        chunkManager = new ChunkManager(generator);
+        chunkManager = new ChunkManager(seed);
     }
 
     // ---- world-space voxel access ----
 
     /**
      * Returns the {@link VoxelType} at the given world coordinates,
-     * generating the containing chunk on demand if necessary.
+     * generating the containing chunk <b>synchronously</b> if necessary.
      */
     public VoxelType getVoxelAt(int worldX, int worldY, int worldZ) {
         int cx = Math.floorDiv(worldX, CHUNK_SIZE);
@@ -49,7 +49,8 @@ public class AbyssWorld {
 
     /**
      * Returns the continuous density value at the given world coordinates.
-     * Needed by the marching-cubes mesher.
+     * Needed by the marching-cubes mesher.  Generates chunk synchronously
+     * if not yet loaded.
      */
     public float getDensityAt(int worldX, int worldY, int worldZ) {
         int cx = Math.floorDiv(worldX, CHUNK_SIZE);
@@ -82,15 +83,37 @@ public class AbyssWorld {
         chunk.setDensity(lx, ly, lz, type.isSolid() ? 1f : -1f);
     }
 
+    // ---- chunk lifecycle ----
+
     /**
-     * Ensures that all chunks within {@code radius} chunk-units of the
-     * given world position are loaded (generated if needed).
+     * Queues async generation for all chunks within the given radii of
+     * the world position.  Non-blocking — chunks arrive over subsequent
+     * frames via {@link #pollCompletedChunks()}.
      *
      * @param worldX  player world X
      * @param worldY  player world Y
      * @param worldZ  player world Z
      * @param hRadius horizontal chunk radius to load
      * @param vRadius vertical chunk radius to load
+     */
+    public void loadChunksAroundAsync(int worldX, int worldY, int worldZ,
+                                       int hRadius, int vRadius) {
+        int pcx = Math.floorDiv(worldX, CHUNK_SIZE);
+        int pcy = Math.floorDiv(worldY, CHUNK_SIZE);
+        int pcz = Math.floorDiv(worldZ, CHUNK_SIZE);
+
+        for (int dy = -vRadius; dy <= vRadius; dy++) {
+            for (int dz = -hRadius; dz <= hRadius; dz++) {
+                for (int dx = -hRadius; dx <= hRadius; dx++) {
+                    chunkManager.requestChunkAsync(pcx + dx, pcy + dy, pcz + dz);
+                }
+            }
+        }
+    }
+
+    /**
+     * Synchronous version — blocks until all chunks are generated.
+     * Use only during initialisation or testing.
      */
     public void loadChunksAround(int worldX, int worldY, int worldZ,
                                   int hRadius, int vRadius) {
@@ -108,15 +131,18 @@ public class AbyssWorld {
     }
 
     /**
-     * Unloads any chunk whose chunk-space distance from the given world
-     * position exceeds the specified radii. Call periodically as the
-     * player moves to keep memory bounded.
+     * Drains completed async chunk results.  Call once per frame.
      *
-     * @param worldX  player world X
-     * @param worldY  player world Y
-     * @param worldZ  player world Z
-     * @param hRadius horizontal chunk radius to keep
-     * @param vRadius vertical chunk radius to keep
+     * @return chunks that just became available this tick
+     */
+    public List<VoxelChunk> pollCompletedChunks() {
+        return chunkManager.pollCompletedChunks();
+    }
+
+    /**
+     * Unloads any chunk whose chunk-space distance from the given world
+     * position exceeds the specified radii.  Call periodically as the
+     * player moves to keep memory bounded.
      */
     public void unloadDistantChunks(int worldX, int worldY, int worldZ,
                                      int hRadius, int vRadius) {
@@ -143,8 +169,10 @@ public class AbyssWorld {
     public long getSeed() { return seed; }
     public ChunkManager getChunkManager() { return chunkManager; }
 
-    /** No-op for now; will release GPU resources once meshing is added. */
+    /** Shuts down background generation threads and releases resources. */
     public void dispose() {
-        // Future: dispose mesh data, release native buffers, etc.
+        if (chunkManager != null) {
+            chunkManager.shutdown();
+        }
     }
 }
