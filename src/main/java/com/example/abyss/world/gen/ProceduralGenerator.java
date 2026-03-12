@@ -135,12 +135,9 @@ public class ProceduralGenerator {
                 for (int lx = 0; lx < SIZE; lx++) {
                     int wx = worldBaseX + lx;
 
-
-                    // 2. Evaluate combined density function
                     float density = evaluateDensity(wx, wy, wz, cfg);
                     data.setDensity(lx, ly, lz, density);
 
-                    // 3. Assign voxel type
                     VoxelType type = assignType(wx, wy, wz, density, cfg, primaryLayer);
                     data.setType(lx, ly, lz, type);
                 }
@@ -260,5 +257,13 @@ public class ProceduralGenerator {
     private static float smoothstep(float edge0, float edge1, float x) {
         float t = Math.max(0f, Math.min(1f, (x - edge0) / (edge1 - edge0)));
         return t * t * (3f - 2f * t);
+    }
+
+    static int getOceaniaWaterlineY() {
+        return OCEANIA_WATERLINE_Y;
+    }
+
+    static float getAbyssBoundaryRadius() {
+        return ABYSS_BOUNDARY_RADIUS;
     }
 }
