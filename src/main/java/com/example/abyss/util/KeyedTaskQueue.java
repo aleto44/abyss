@@ -50,14 +50,18 @@ public class KeyedTaskQueue<K, V> {
     private final ExecutorService pool;
 
     private KeyedTaskQueue(Builder<K, V> builder) {
-        int threads = builder.threadCount > 0
-                ? builder.threadCount
-                : Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
-        this.pool = Executors.newFixedThreadPool(threads, r -> {
-            Thread t = new Thread(r, builder.threadNamePrefix);
-            t.setDaemon(true);
-            return t;
+        this.pool = Executors.newFixedThreadPool(resolveThreadCount(builder), runnable -> {
+            Thread thread = new Thread(runnable, builder.threadNamePrefix);
+            thread.setDaemon(true);
+            return thread;
         });
+    }
+
+    private int resolveThreadCount(Builder<K, V> builder) {
+        if (builder.threadCount > 0) {
+            return builder.threadCount;
+        }
+        return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
     }
 
     // ----------------------------------------------------------------
@@ -74,7 +78,8 @@ public class KeyedTaskQueue<K, V> {
         private String threadNamePrefix = "KeyedTaskQueue";
         private int threadCount = 0; // 0 = auto (cores - 1)
 
-        private Builder() {}
+        private Builder() {
+        }
 
         /** Prefix applied to worker thread names. Defaults to {@code "KeyedTaskQueue"}. */
         public Builder<K, V> threadNamePrefix(String prefix) {
@@ -110,9 +115,11 @@ public class KeyedTaskQueue<K, V> {
      * @return {@code true} if the work was enqueued; {@code false} if already known
      */
     public boolean submit(K key, Supplier<V> work) {
-        if (!knownKeys.add(key)) return false;
-        CompletableFuture<V> future = CompletableFuture.supplyAsync(work, pool);
-        pending.put(key, future);
+        if (!knownKeys.add(key)) {
+            return false;
+        }
+
+        pending.put(key, CompletableFuture.supplyAsync(work, pool));
         return true;
     }
 
@@ -121,7 +128,8 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /** A completed result paired with its key. */
-    public record Result<K, V>(K key, V value) {}
+    public record Result<K, V>(K key, V value) {
+    }
 
     /**
      * Drains all completed tasks and returns them.
@@ -130,31 +138,50 @@ public class KeyedTaskQueue<K, V> {
      * @return list of results that finished since the last poll
      */
     public List<Result<K, V>> pollCompleted() {
-        if (pending.isEmpty()) return Collections.emptyList();
+        if (pending.isEmpty()) {
+            return Collections.emptyList();
+        }
 
         List<Result<K, V>> results = new ArrayList<>();
-        var it = pending.entrySet().iterator();
-        while (it.hasNext()) {
-            var entry = it.next();
-            CompletableFuture<V> future = entry.getValue();
-            if (!future.isDone()) continue;
-            it.remove();
-            if (future.isCancelled()) {
-                knownKeys.remove(entry.getKey());
-                continue;
-            }
-            if (future.isCompletedExceptionally()) {
-                future.exceptionally(ex -> {
-                    System.err.println("KeyedTaskQueue task failed for "
-                            + entry.getKey() + ": " + ex.getMessage());
-                    return null;
-                });
-                knownKeys.remove(entry.getKey());
-                continue;
-            }
-            results.add(new Result<>(entry.getKey(), future.join()));
+        var iterator = pending.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<K, CompletableFuture<V>> entry = iterator.next();
+            tryCollectCompletedResult(entry, iterator, results);
         }
         return results;
+    }
+
+    private void tryCollectCompletedResult(Map.Entry<K, CompletableFuture<V>> entry,
+                                           java.util.Iterator<Map.Entry<K, CompletableFuture<V>>> iterator,
+                                           List<Result<K, V>> results) {
+        CompletableFuture<V> future = entry.getValue();
+        if (!future.isDone()) {
+            return;
+        }
+
+        iterator.remove();
+        if (future.isCancelled()) {
+            handleCancelledTask(entry.getKey());
+            return;
+        }
+        if (future.isCompletedExceptionally()) {
+            handleFailedTask(entry.getKey(), future);
+            return;
+        }
+
+        results.add(new Result<>(entry.getKey(), future.join()));
+    }
+
+    private void handleCancelledTask(K key) {
+        knownKeys.remove(key);
+    }
+
+    private void handleFailedTask(K key, CompletableFuture<V> future) {
+        future.exceptionally(ex -> {
+            System.err.println("KeyedTaskQueue task failed for " + key + ": " + ex.getMessage());
+            return null;
+        });
+        knownKeys.remove(key);
     }
 
     // ----------------------------------------------------------------
@@ -167,7 +194,13 @@ public class KeyedTaskQueue<K, V> {
      */
     public V awaitPending(K key) {
         CompletableFuture<V> future = pending.remove(key);
-        if (future == null) return null;
+        if (future == null) {
+            return null;
+        }
+        return joinPendingFuture(key, future);
+    }
+
+    private V joinPendingFuture(K key, CompletableFuture<V> future) {
         try {
             return future.join();
         } catch (CancellationException e) {
@@ -191,22 +224,15 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /**
-     * Cancels and forgets a key, allowing it to be re-submitted later.
-     */
-    public void cancel(K key) {
-        knownKeys.remove(key);
-        CompletableFuture<V> future = pending.remove(key);
-        if (future != null) future.cancel(false);
-    }
-
-    /**
      * Forgets a completed key so it can be re-submitted.
      * Use when unloading a previously-completed result.
      */
     public void forget(K key) {
         knownKeys.remove(key);
         CompletableFuture<V> future = pending.remove(key);
-        if (future != null) future.cancel(false);
+        if (future != null) {
+            future.cancel(false);
+        }
     }
 
     // ----------------------------------------------------------------

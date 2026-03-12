@@ -83,10 +83,6 @@ public class MeshManager {
         renderState.setPendingMeshData(null);
     }
 
-    public void cancel(ChunkKey key) {
-        taskQueue.cancel(key);
-    }
-
     public void forget(ChunkKey key) {
         taskQueue.forget(key);
     }

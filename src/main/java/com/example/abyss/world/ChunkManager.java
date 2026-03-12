@@ -178,7 +178,6 @@ public class ChunkManager {
         ChunkKey key = new ChunkKey(cx, cy, cz);
         LoadedChunk loadedChunk = loaded.remove(key);
         taskQueue.forget(key);
-        meshManager.cancel(key);
         meshManager.forget(key);
         if (loadedChunk != null) {
             meshManager.disposeChunkMeshes(loadedChunk.renderState());
