@@ -4,14 +4,26 @@ import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
- * The 7 distinct layers of the Abyss, ordered from surface to deepest.
+ * The distinct layers of the Abyss, ordered from the surface down to the deepest reaches.
  * <p>
- * Depth uses the Y axis: surface is y = 0, depth increases negatively.
+ * Depth uses the Y axis: the overworld surface sits above y = 0, and abyss depth increases negatively.
  * Each layer owns a fixed depth range and a {@link LayerConfig} that drives
  * the procedural generation pipeline.
  * </p>
  */
 public enum Layer {
+
+    SURFACE(512, 0,
+            new LayerConfig(
+                    0.28f,   // elevated threshold – more open sky between mountain ridges
+                    0.0045f, // broad, sweeping mountain shapes around the abyss
+                    1.15f,   // tall terrain variation for a ring of peaks
+                    520f,    // very wide opening at the surface
+                    new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS},
+                    null,
+                    320f,    // brightest, clearest layer
+                    new Color[]{new Color(0.62f, 0.72f, 0.68f, 1f), new Color(0.88f, 0.90f, 0.95f, 1f)}
+            )),
 
     THE_EDGE(0, -500,
             new LayerConfig(
@@ -97,7 +109,7 @@ public enum Layer {
                     new Color[]{new Color(0.15f, 0.05f, 0.2f, 1f), new Color(0.5f, 0.1f, 0.1f, 1f)}
             ));
 
-    /** Inclusive upper bound (closer to surface, higher / less negative). */
+    /** Inclusive upper bound (closer to the surface, higher / less negative). */
     private final int yStart;
     /** Inclusive lower bound (deeper, more negative). */
     private final int yEnd;
@@ -112,16 +124,24 @@ public enum Layer {
         this.config = config;
     }
 
-    public int getYStart() { return yStart; }
-    public int getYEnd()   { return yEnd; }
-    public LayerConfig getConfig() { return config; }
+    public int getYStart() {
+        return yStart;
+    }
+
+    public int getYEnd() {
+        return yEnd;
+    }
+
+    public LayerConfig getConfig() {
+        return config;
+    }
 
     // ---- lookup helpers ----
 
     /**
      * Returns the primary layer for a given world Y-coordinate.
-     * If {@code worldY} is above THE_EDGE it returns THE_EDGE;
-     * if below DEEP_EXTREMES it returns DEEP_EXTREMES.
+     * If {@code worldY} is above {@link #SURFACE} it returns {@link #SURFACE};
+     * if below {@link #DEEP_EXTREMES} it returns {@link #DEEP_EXTREMES}.
      */
     public static Layer forY(int worldY) {
         for (Layer l : values()) {
@@ -130,7 +150,9 @@ public enum Layer {
             }
         }
         // Above the top → surface layer; below the bottom → deepest layer
-        if (worldY > values()[0].yStart) return values()[0];
+        if (worldY > values()[0].yStart) {
+            return values()[0];
+        }
         return values()[values().length - 1];
     }
 

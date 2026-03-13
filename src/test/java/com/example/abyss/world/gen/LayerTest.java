@@ -11,7 +11,7 @@ class LayerTest {
 
     @Test
     void forYClampsAboveAndBelowDefinedRanges() {
-        assertEquals(Layer.THE_EDGE, Layer.forY(Layer.THE_EDGE.getYStart() + 200));
+        assertEquals(Layer.SURFACE, Layer.forY(Layer.SURFACE.getYStart() + 200));
         assertEquals(Layer.DEEP_EXTREMES, Layer.forY(Layer.DEEP_EXTREMES.getYEnd() - 200));
     }
 
@@ -69,5 +69,25 @@ class LayerTest {
             assertTrue(at.blendFactor() < below.blendFactor(), "Blend should keep increasing past boundary " + boundaryY);
             assertTrue(above.blendFactor() >= 0f && below.blendFactor() <= 1f);
         }
+    }
+
+    @Test
+    void surfaceBoundaryTransitionsIntoTheEdge() {
+        int boundaryY = Layer.SURFACE.getYEnd();
+
+        assertEquals(Layer.THE_EDGE, Layer.forY(boundaryY), "Surface floor should hand off to The Edge at y=" + boundaryY);
+        assertEquals(Layer.SURFACE, Layer.forY(boundaryY + 1), "One voxel above the handoff should remain in Surface.");
+
+        Layer.TransitionInfo transitionAbove = Layer.getTransition(boundaryY + 1);
+        Layer.TransitionInfo transitionAt = Layer.getTransition(boundaryY);
+        Layer.TransitionInfo transitionBelow = Layer.getTransition(boundaryY - 1);
+
+        assertNotNull(transitionAbove);
+        assertNotNull(transitionAt);
+        assertNotNull(transitionBelow);
+        assertEquals(Layer.SURFACE, transitionAbove.upper());
+        assertEquals(Layer.THE_EDGE, transitionAbove.lower());
+        assertTrue(transitionAbove.blendFactor() < transitionAt.blendFactor());
+        assertTrue(transitionAt.blendFactor() < transitionBelow.blendFactor());
     }
 }

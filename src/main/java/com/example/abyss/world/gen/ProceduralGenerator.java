@@ -8,6 +8,7 @@ import com.example.abyss.world.gen.features.HangingGardensFeatureProcessor;
 import com.example.abyss.world.gen.features.MyceliumFeatureProcessor;
 import com.example.abyss.world.gen.features.OceaniaFeatureProcessor;
 import com.example.abyss.world.gen.features.SkyWallsFeatureProcessor;
+import com.example.abyss.world.gen.features.SurfaceFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
 
@@ -90,6 +91,7 @@ public class ProceduralGenerator {
         boundaryNoise.SetFrequency(0.003f);
 
         // Register layer-specific feature processors (gen step 4)
+        featureProcessors.put(Layer.SURFACE, new SurfaceFeatureProcessor(seed));
         featureProcessors.put(Layer.THE_EDGE, new EdgeFeatureProcessor(seed));
         featureProcessors.put(Layer.FOREST_DEPTHS, new ForestFeatureProcessor(seed));
         featureProcessors.put(Layer.HANGING_GARDENS, new HangingGardensFeatureProcessor(seed));

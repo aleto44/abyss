@@ -24,8 +24,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private static final long WORLD_SEED = 42L;
     private static final int INITIAL_HORIZONTAL_RADIUS = 2;
     private static final int INITIAL_VERTICAL_RADIUS = 2;
-    private static final int STREAM_HORIZONTAL_RADIUS = 3;
-    private static final int STREAM_VERTICAL_RADIUS = 2;
+    private static final int STREAM_HORIZONTAL_RADIUS = 4;
+    private static final int STREAM_VERTICAL_RADIUS = 4;
     private static final float CAMERA_FOV_DEGREES = 75f;
     private static final float CAMERA_NEAR = 0.1f;
     private static final float CAMERA_FAR = 1200f;
@@ -157,11 +157,23 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     }
 
     private void renderOverlay() {
+        Gdx.gl.glDisable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glDepthMask(false);
+        Gdx.gl.glDisable(GL20.GL_CULL_FACE);
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+
+        batch.setProjectionMatrix(new Matrix4().setToOrtho2D(0f, 0f, Gdx.graphics.getWidth(), Gdx.graphics.getHeight()));
+        batch.setColor(Color.WHITE);
+        font.setColor(Color.WHITE);
+
         batch.begin();
         if (debugInfo != null) {
             font.draw(batch, debugInfo, 16f, Gdx.graphics.getHeight() - 16f);
         }
         batch.end();
+
+        Gdx.gl.glDepthMask(true);
     }
 
     private void updateDebugInfo() {
