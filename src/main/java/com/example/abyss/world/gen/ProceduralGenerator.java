@@ -30,18 +30,9 @@ import java.util.Map;
  */
 public class ProceduralGenerator {
 
-    private static final int SIZE = VoxelData.SIZE; // 32
+    private static final int SIZE = VoxelData.SIZE;
 
-    // --- noise instances (all seeded from the world seed) ---
-    private final FastNoiseLite terrainNoise;
-    private final FastNoiseLite shaftNoise;      // perturbs shaft radius
-    private final FastNoiseLite typeNoise;        // secondary octave for voxel-type selection
-    private final FastNoiseLite hazardNoise;      // pockets for hazardous voxels
-    private final FastNoiseLite caveNoise;        // dedicated cave carving
-    private final FastNoiseLite boundaryNoise;    // perturbs the horizontal boundary wall
-
-    /** Per-layer feature processors for generation step 4. */
-    private final Map<Layer, LayerFeatureProcessor> featureProcessors = new EnumMap<>(Layer.class);
+    // --- constants ---
 
     /** Margin (in voxels) over which the shaft edge fades via smoothstep. */
     private static final float SHAFT_MARGIN = 30f;
@@ -62,43 +53,69 @@ public class ProceduralGenerator {
     /** Cave noise threshold – voxels with cave noise above this are hollowed out. */
     private static final float CAVE_THRESHOLD = 0.45f;
 
+    /** Hazard-pocket noise threshold – air voxels above this become hazardous. */
+    private static final float HAZARD_THRESHOLD = 0.55f;
+
+    // --- noise instances (all seeded from the world seed) ---
+    private final FastNoiseLite terrainNoise;
+    private final FastNoiseLite shaftNoise;      // perturbs shaft radius
+    private final FastNoiseLite typeNoise;        // secondary octave for voxel-type selection
+    private final FastNoiseLite hazardNoise;      // pockets for hazardous voxels
+    private final FastNoiseLite caveNoise;        // dedicated cave carving
+    private final FastNoiseLite boundaryNoise;    // perturbs the horizontal boundary wall
+
+    /** Per-layer feature processors, applied as a post-processing pass after voxel fill. */
+    private final Map<Layer, LayerFeatureProcessor> featureProcessors = new EnumMap<>(Layer.class);
+
     public ProceduralGenerator(long seed) {
-        terrainNoise = new FastNoiseLite((int) seed);
-        terrainNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        terrainNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
-        terrainNoise.SetFractalOctaves(4);
+        terrainNoise = buildNoise((int) seed,
+                FastNoiseLite.NoiseType.OpenSimplex2, FastNoiseLite.FractalType.FBm, 4, -1f);
+        shaftNoise = buildNoise((int) (seed ^ 0xBEEF_CAFEL),
+                FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.005f);
+        typeNoise = buildNoise((int) (seed ^ 0xDEAD_FACEL),
+                FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.04f);
+        hazardNoise = buildNoise((int) (seed ^ 0xCAFE_BABEL),
+                FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.03f);
+        caveNoise = buildNoise((int) (seed ^ 0xF00D_BA11L),
+                FastNoiseLite.NoiseType.OpenSimplex2, FastNoiseLite.FractalType.Ridged, 3, 0.02f);
+        boundaryNoise = buildNoise((int) (seed ^ 0xABCD_1234L),
+                FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.003f);
 
-        shaftNoise = new FastNoiseLite((int) (seed ^ 0xBEEFCAFEL));
-        shaftNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        shaftNoise.SetFrequency(0.005f);
+        // Register layer-specific feature processors
+        featureProcessors.put(Layer.SURFACE,         new SurfaceFeatureProcessor(seed));
+        featureProcessors.put(Layer.THE_EDGE,         new EdgeFeatureProcessor(seed));
+        featureProcessors.put(Layer.FOREST_DEPTHS,    new ForestFeatureProcessor(seed));
+        featureProcessors.put(Layer.HANGING_GARDENS,  new HangingGardensFeatureProcessor(seed));
+        featureProcessors.put(Layer.SKY_WALLS,        new SkyWallsFeatureProcessor(seed));
+        featureProcessors.put(Layer.MYCELIUM,         new MyceliumFeatureProcessor(seed));
+        featureProcessors.put(Layer.OCEANIA,          new OceaniaFeatureProcessor(seed));
+        featureProcessors.put(Layer.DEEP_EXTREMES,    new DeepExtremesFeatureProcessor(seed));
+    }
 
-        typeNoise = new FastNoiseLite((int) (seed ^ 0xDEADFACEL));
-        typeNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        typeNoise.SetFrequency(0.04f);
-
-        hazardNoise = new FastNoiseLite((int) (seed ^ 0xCAFEBABEL));
-        hazardNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        hazardNoise.SetFrequency(0.03f);
-
-        caveNoise = new FastNoiseLite((int) (seed ^ 0xF00D_BA11L));
-        caveNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        caveNoise.SetFractalType(FastNoiseLite.FractalType.Ridged);
-        caveNoise.SetFractalOctaves(3);
-        caveNoise.SetFrequency(0.02f);
-
-        boundaryNoise = new FastNoiseLite((int) (seed ^ 0xABCD_1234L));
-        boundaryNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        boundaryNoise.SetFrequency(0.003f);
-
-        // Register layer-specific feature processors (gen step 4)
-        featureProcessors.put(Layer.SURFACE, new SurfaceFeatureProcessor(seed));
-        featureProcessors.put(Layer.THE_EDGE, new EdgeFeatureProcessor(seed));
-        featureProcessors.put(Layer.FOREST_DEPTHS, new ForestFeatureProcessor(seed));
-        featureProcessors.put(Layer.HANGING_GARDENS, new HangingGardensFeatureProcessor(seed));
-        featureProcessors.put(Layer.SKY_WALLS, new SkyWallsFeatureProcessor(seed));
-        featureProcessors.put(Layer.MYCELIUM, new MyceliumFeatureProcessor(seed));
-        featureProcessors.put(Layer.OCEANIA, new OceaniaFeatureProcessor(seed));
-        featureProcessors.put(Layer.DEEP_EXTREMES, new DeepExtremesFeatureProcessor(seed));
+    /**
+     * Creates and configures a {@link FastNoiseLite} instance.
+     *
+     * @param seed         integer seed
+     * @param noiseType    noise algorithm to use
+     * @param fractalType  fractal layering, or {@code null} for none
+     * @param octaves      fractal octave count; ignored when {@code fractalType} is {@code null}
+     * @param frequency    base frequency, or {@code -1f} to leave at the library default
+     */
+    private static FastNoiseLite buildNoise(int seed,
+                                            FastNoiseLite.NoiseType noiseType,
+                                            FastNoiseLite.FractalType fractalType,
+                                            int octaves,
+                                            float frequency) {
+        FastNoiseLite noise = new FastNoiseLite(seed);
+        noise.SetNoiseType(noiseType);
+        if (fractalType != null) {
+            noise.SetFractalType(fractalType);
+            noise.SetFractalOctaves(octaves);
+        }
+        if (frequency > 0f) {
+            noise.SetFrequency(frequency);
+        }
+        return noise;
     }
 
     /**
@@ -118,20 +135,22 @@ public class ProceduralGenerator {
         // Track the last frequency set on terrainNoise to avoid redundant calls
         float lastFrequency = -1f;
 
+        // Step 1–3: fill each voxel with density and type
         for (int ly = 0; ly < SIZE; ly++) {
             int wy = worldBaseY + ly;
 
-            // 1. Resolve layer config once per Y-slice (config only depends on Y)
+            // Step 1: resolve layer config once per Y-slice (config only depends on Y)
             Layer primaryLayer = Layer.forY(wy);
             LayerConfig cfg = resolveConfig(wy, primaryLayer);
 
-            // Only update the terrain noise frequency when it actually changes
+            // Step 2: update terrain noise frequency only when it changes
             float freq = cfg.noiseFrequency();
             if (freq != lastFrequency) {
                 terrainNoise.SetFrequency(freq);
                 lastFrequency = freq;
             }
 
+            // Step 3: evaluate density and assign voxel type
             for (int lz = 0; lz < SIZE; lz++) {
                 int wz = worldBaseZ + lz;
                 for (int lx = 0; lx < SIZE; lx++) {
@@ -146,9 +165,9 @@ public class ProceduralGenerator {
             }
         }
 
-        // 4. Apply layer-specific features (post-processing)
-        Layer primaryLayer = Layer.forY(worldBaseY + SIZE / 2);
-        LayerFeatureProcessor processor = featureProcessors.get(primaryLayer);
+        // Step 4: apply layer-specific features (post-processing pass)
+        Layer chunkCenterLayer = Layer.forY(worldBaseY + SIZE / 2);
+        LayerFeatureProcessor processor = featureProcessors.get(chunkCenterLayer);
         if (processor != null) {
             processor.process(data, worldBaseX, worldBaseY, worldBaseZ);
         }
@@ -211,12 +230,21 @@ public class ProceduralGenerator {
                 horizontalDist);
 
         // Cave term – ridged noise carves tunnels through solid terrain
-        float caveSample = caveNoise.GetNoise(wx, wy, wz);
-        float caveTerm = (caveSample > CAVE_THRESHOLD)
-                ? (caveSample - CAVE_THRESHOLD) / (1f - CAVE_THRESHOLD)  // 0..1 ramp
-                : 0f;
+        float caveTerm = caveTerm(caveNoise.GetNoise(wx, wy, wz));
 
         return terrainDensity - shaftTerm + boundaryTerm - caveTerm;
+    }
+
+    /**
+     * Maps a raw cave noise sample to a [0..1] carving strength.
+     * Returns 0 when the sample is below {@link #CAVE_THRESHOLD}, and ramps
+     * linearly to 1 at the maximum noise value.
+     */
+    private static float caveTerm(float caveSample) {
+        if (caveSample <= CAVE_THRESHOLD) {
+            return 0f;
+        }
+        return (caveSample - CAVE_THRESHOLD) / (1f - CAVE_THRESHOLD);
     }
 
     /**
@@ -245,7 +273,7 @@ public class ProceduralGenerator {
         // Hazard pockets
         if (cfg.hazardType() != null) {
             float h = hazardNoise.GetNoise(wx, wy, wz);
-            if (h > 0.55f) { // sparse pockets
+            if (h > HAZARD_THRESHOLD) {
                 return cfg.hazardType();
             }
         }

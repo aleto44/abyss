@@ -14,7 +14,7 @@ public class WorldGenSliceRenderer {
 
     private static final int DEFAULT_SLICE_Z = 0;
     private static final int DEFAULT_WORLD_CENTER_X = 0;
-    private static final int DEFAULT_WORLD_CENTER_Y = -1200;
+    private static final int DEFAULT_WORLD_CENTER_Y = 0;
     private static final int DEFAULT_SAMPLES_WIDE = 96;
     private static final int DEFAULT_SAMPLES_TALL = 64;
     private static final int DEFAULT_WORLD_STEP = 16;
