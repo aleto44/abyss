@@ -226,7 +226,9 @@ public class ProceduralGenerator {
         if (density > 0f) {
             // Solid – pick from dominant types via secondary noise
             VoxelType[] types = cfg.dominantVoxelTypes();
-            if (types.length == 1) return types[0];
+            if (types.length == 1) {
+                return types[0];
+            }
 
             float n = typeNoise.GetNoise(wx, wy, wz); // range roughly -1..1
             int idx = Math.floorMod((int) ((n + 1f) * 0.5f * types.length * 1000), types.length);

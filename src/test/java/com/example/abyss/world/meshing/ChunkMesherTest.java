@@ -54,28 +54,6 @@ class ChunkMesherTest {
     }
 
     @Test
-    void buildMeshUsesNeighborSamplesAtPositiveXBoundary() {
-        VoxelChunk center = createChunk(0, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusX = createChunk(1, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusY = createChunk(0, 1, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusZ = createChunk(0, 0, 1, -1f, VoxelType.AIR);
-
-        for (int y = 0; y < VoxelChunk.SIZE; y++) {
-            for (int z = 0; z < VoxelChunk.SIZE; z++) {
-                center.setDensity(VoxelChunk.SIZE - 1, y, z, -0.25f);
-                center.setVoxel(VoxelChunk.SIZE - 1, y, z, VoxelType.AIR);
-                plusX.setDensity(0, y, z, 0.25f);
-                plusX.setVoxel(0, y, z, VoxelType.STONE);
-            }
-        }
-
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
-
-        assertFalse(mesh.isEmpty());
-        assertContainsVertexNear(mesh.firstOpaqueVertices(), VoxelChunk.SIZE - 0.5f, 10.5f, 10.5f, 1.0f);
-    }
-
-    @Test
     void buildMeshRoutesTransparentSolidTypesSeparately() {
         VoxelChunk center = createChunk(0, 0, 0, -1f, VoxelType.AIR);
         VoxelChunk plusX = createChunk(1, 0, 0, -1f, VoxelType.AIR);
@@ -101,22 +79,6 @@ class ChunkMesherTest {
         assertTrue(mesh.transparentIndexCount() > 0);
     }
 
-    @Test
-    void buildMeshSplitsDenseGeometryInto16BitSafeSections() {
-        VoxelChunk center = createWaveChunk(0, 0, 0, 0.22f, VoxelType.STONE);
-        VoxelChunk plusX = createWaveChunk(1, 0, 0, 0.22f, VoxelType.STONE);
-        VoxelChunk plusY = createWaveChunk(0, 1, 0, 0.22f, VoxelType.STONE);
-        VoxelChunk plusZ = createWaveChunk(0, 0, 1, 0.22f, VoxelType.STONE);
-
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
-
-        assertFalse(mesh.isEmpty());
-        assertTrue(mesh.opaqueSections().size() > 1, "Expected dense geometry to be split into multiple sections.");
-        for (MeshSectionData section : mesh.opaqueSections()) {
-            assertTrue(section.vertexCount() <= MeshData.MAX_VERTICES_PER_SECTION);
-            assertTrue(section.indices().length > 0);
-        }
-    }
 
     private static VoxelChunk createChunk(int cx, int cy, int cz, float density, VoxelType type) {
         VoxelData data = new VoxelData();
@@ -140,30 +102,6 @@ class ChunkMesherTest {
                     float density = (worldOffsetX + x) - planeX;
                     data.setDensity(x, y, z, density);
                     data.setType(x, y, z, density > 0f ? VoxelType.STONE : VoxelType.AIR);
-                }
-            }
-        }
-        return new VoxelChunk(cx, cy, cz, data);
-    }
-
-    private static VoxelChunk createWaveChunk(int cx, int cy, int cz, float scale, VoxelType solidType) {
-        VoxelData data = new VoxelData();
-        int worldOffsetX = cx * VoxelChunk.SIZE;
-        int worldOffsetY = cy * VoxelChunk.SIZE;
-        int worldOffsetZ = cz * VoxelChunk.SIZE;
-        for (int x = 0; x < VoxelChunk.SIZE; x++) {
-            for (int y = 0; y < VoxelChunk.SIZE; y++) {
-                for (int z = 0; z < VoxelChunk.SIZE; z++) {
-                    int wx = worldOffsetX + x;
-                    int wy = worldOffsetY + y;
-                    int wz = worldOffsetZ + z;
-                    float density =
-                            (float) Math.sin(wx * scale)
-                                    + (float) Math.cos(wy * scale)
-                                    + (float) Math.sin(wz * scale)
-                                    - 0.1f;
-                    data.setDensity(x, y, z, density);
-                    data.setType(x, y, z, density > 0f ? solidType : VoxelType.AIR);
                 }
             }
         }

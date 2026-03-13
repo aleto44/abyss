@@ -32,7 +32,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private static final float MOVE_SPEED_UNITS_PER_SECOND = 48f;
     private static final float FAST_MOVE_MULTIPLIER = 3f;
     private static final float MOUSE_SENSITIVITY_DEGREES = 0.15f;
-    private static final Vector3 START_POSITION = new Vector3(0f, -1180f, 0f);
+    private static final Vector3 START_POSITION = new Vector3(0f, 0f, 0f);
     private static final Color SKY_COLOR = new Color(0.03f, 0.04f, 0.08f, 1f);
 
     private final Matrix4 modelMatrix = new Matrix4();

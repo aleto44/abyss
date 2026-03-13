@@ -12,42 +12,44 @@ import java.util.function.Function;
 /**
  * Background-safe chunk mesher.
  * <p>
- * Extracts a smooth isosurface from chunk densities using a marching-tetrahedra
- * decomposition of each voxel cell. This preserves the existing async queue,
- * render promotion, and disposal pipeline while replacing the temporary
- * exposed-face meshing pass with actual density-based surface extraction.
+ * Emits a face for every voxel side that borders a non-solid (air/transparent)
+ * neighbour. Each exposed face becomes two triangles forming a quad, with a
+ * flat outward normal. Opaque and transparent faces are kept in separate
+ * section lists to support depth-sorting on the render side.
  * </p>
  */
 public final class ChunkMesher {
 
     private static final int SIZE = VoxelChunk.SIZE;
-    private static final int SCRATCH_SIZE = SIZE + 1;
-    private static final float ISO_LEVEL = 0f;
-    private static final int[][] CELL_CORNERS = {
-            {0, 0, 0},
-            {1, 0, 0},
-            {1, 1, 0},
-            {0, 1, 0},
-            {0, 0, 1},
-            {1, 0, 1},
-            {1, 1, 1},
-            {0, 1, 1}
+
+    /** The six cardinal face directions: +X, -X, +Y, -Y, +Z, -Z. */
+    private static final int[][] FACE_NORMALS = {
+            { 1,  0,  0},
+            {-1,  0,  0},
+            { 0,  1,  0},
+            { 0, -1,  0},
+            { 0,  0,  1},
+            { 0,  0, -1}
     };
-    private static final int[][] TETRAHEDRA = {
-            {0, 5, 1, 6},
-            {0, 1, 2, 6},
-            {0, 2, 3, 6},
-            {0, 3, 7, 6},
-            {0, 7, 4, 6},
-            {0, 4, 5, 6}
-    };
-    private static final int[][] TETRA_EDGES = {
-            {0, 1},
-            {1, 2},
-            {2, 0},
-            {0, 3},
-            {1, 3},
-            {2, 3}
+
+    /**
+     * For each face direction the four corners of the quad, expressed as
+     * offsets from the voxel's (x, y, z) origin.
+     * Winding order is counter-clockwise when viewed from outside.
+     */
+    private static final float[][][] FACE_QUADS = {
+            // +X
+            {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}},
+            // -X
+            {{0, 0, 1}, {0, 1, 1}, {0, 1, 0}, {0, 0, 0}},
+            // +Y
+            {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
+            // -Y
+            {{0, 0, 1}, {0, 0, 0}, {1, 0, 0}, {1, 0, 1}},
+            // +Z
+            {{1, 0, 1}, {1, 1, 1}, {0, 1, 1}, {0, 0, 1}},
+            // -Z
+            {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}
     };
 
     private ChunkMesher() {
@@ -57,18 +59,18 @@ public final class ChunkMesher {
                                      VoxelChunk plusX,
                                      VoxelChunk plusY,
                                      VoxelChunk plusZ) {
-        float[][][] density = new float[SCRATCH_SIZE][SCRATCH_SIZE][SCRATCH_SIZE];
-        VoxelType[][][] types = new VoxelType[SCRATCH_SIZE][SCRATCH_SIZE][SCRATCH_SIZE];
-
-        fillScratch(center, plusX, plusY, plusZ, density, types);
-
         SectionCollector opaqueSections = new SectionCollector();
         SectionCollector transparentSections = new SectionCollector();
 
         for (int x = 0; x < SIZE; x++) {
             for (int y = 0; y < SIZE; y++) {
                 for (int z = 0; z < SIZE; z++) {
-                    emitCell(x, y, z, density, types, opaqueSections, transparentSections);
+                    VoxelType type = center.getVoxel(x, y, z);
+                    if (type == null || !type.isSolid()) {
+                        continue;
+                    }
+                    emitExposedFaces(x, y, z, type, center, plusX, plusY, plusZ,
+                            opaqueSections, transparentSections);
                 }
             }
         }
@@ -80,263 +82,94 @@ public final class ChunkMesher {
         return new MeshData(opaqueSections.toSections(), transparentSections.toSections());
     }
 
-    private static void emitCell(int x,
-                                 int y,
-                                 int z,
-                                 float[][][] density,
-                                 VoxelType[][][] types,
-                                 SectionCollector opaqueSections,
-                                 SectionCollector transparentSections) {
-        CellCorner[] corners = new CellCorner[8];
-        boolean hasSolid = false;
-        boolean hasAir = false;
-        for (int i = 0; i < CELL_CORNERS.length; i++) {
-            int[] offset = CELL_CORNERS[i];
-            int sx = x + offset[0];
-            int sy = y + offset[1];
-            int sz = z + offset[2];
-            float sampleDensity = density[sx][sy][sz];
-            VoxelType sampleType = normalizeType(types[sx][sy][sz], sampleDensity);
-            corners[i] = new CellCorner(sx, sy, sz, sampleDensity, sampleType);
-            if (sampleDensity > ISO_LEVEL) {
-                hasSolid = true;
-            } else {
-                hasAir = true;
-            }
-        }
-        if (!hasSolid || !hasAir) {
-            return;
-        }
+    private static void emitExposedFaces(int x, int y, int z,
+                                         VoxelType type,
+                                         VoxelChunk center,
+                                         VoxelChunk plusX,
+                                         VoxelChunk plusY,
+                                         VoxelChunk plusZ,
+                                         SectionCollector opaqueSections,
+                                         SectionCollector transparentSections) {
+        SectionCollector sections = type.isTransparent() ? transparentSections : opaqueSections;
 
-        for (int[] tetra : TETRAHEDRA) {
-            emitTetrahedron(corners, tetra, density, opaqueSections, transparentSections);
-        }
-    }
+        for (int face = 0; face < FACE_NORMALS.length; face++) {
+            int[] normal = FACE_NORMALS[face];
+            int nx = x + normal[0];
+            int ny = y + normal[1];
+            int nz = z + normal[2];
 
-    private static void emitTetrahedron(CellCorner[] cellCorners,
-                                        int[] tetra,
-                                        float[][][] density,
-                                        SectionCollector opaqueSections,
-                                        SectionCollector transparentSections) {
-        CellCorner[] tetraCorners = new CellCorner[4];
-        boolean hasSolid = false;
-        boolean hasAir = false;
-        for (int i = 0; i < tetra.length; i++) {
-            tetraCorners[i] = cellCorners[tetra[i]];
-            if (tetraCorners[i].density() > ISO_LEVEL) {
-                hasSolid = true;
-            } else {
-                hasAir = true;
-            }
-        }
-        if (!hasSolid || !hasAir) {
-            return;
-        }
-
-        IntersectionPoint[] intersections = new IntersectionPoint[4];
-        int intersectionCount = 0;
-        for (int[] edge : TETRA_EDGES) {
-            CellCorner a = tetraCorners[edge[0]];
-            CellCorner b = tetraCorners[edge[1]];
-            if (!crossesIsoSurface(a.density(), b.density())) {
+            VoxelType neighbour = sampleNeighbour(nx, ny, nz, center, plusX, plusY, plusZ);
+            if (neighbour != null && neighbour.isSolid() && !neighbour.isTransparent()) {
                 continue;
             }
-            intersections[intersectionCount++] = interpolateIntersection(a, b, density);
-        }
 
-        if (intersectionCount < 3) {
-            return;
-        }
-
-        VoxelType surfaceType = chooseSurfaceType(tetraCorners);
-        SectionCollector sections = surfaceType.isTransparent() ? transparentSections : opaqueSections;
-
-        if (intersectionCount == 3) {
-            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, sections);
-            return;
-        }
-
-        if (intersectionCount == 4) {
-            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, sections);
-            emitTriangle(intersections[0], intersections[2], intersections[3], surfaceType, sections);
+            emitQuad(x, y, z, face, type, sections);
         }
     }
 
-    private static void emitTriangle(IntersectionPoint a,
-                                     IntersectionPoint b,
-                                     IntersectionPoint c,
-                                     VoxelType type,
-                                     SectionCollector sections) {
-        float ux = b.x() - a.x();
-        float uy = b.y() - a.y();
-        float uz = b.z() - a.z();
-        float vx = c.x() - a.x();
-        float vy = c.y() - a.y();
-        float vz = c.z() - a.z();
-        float faceNx = uy * vz - uz * vy;
-        float faceNy = uz * vx - ux * vz;
-        float faceNz = ux * vy - uy * vx;
-        float faceLengthSq = faceNx * faceNx + faceNy * faceNy + faceNz * faceNz;
-        if (faceLengthSq <= 1.0e-12f) {
-            return;
+    /**
+     * Samples a voxel type at local chunk coordinates that may spill into a
+     * neighbouring chunk on the +X, +Y, or +Z axis.
+     */
+    private static VoxelType sampleNeighbour(int x, int y, int z,
+                                             VoxelChunk center,
+                                             VoxelChunk plusX,
+                                             VoxelChunk plusY,
+                                             VoxelChunk plusZ) {
+        if (x < 0 || y < 0 || z < 0) {
+            // Negative-direction neighbours are not provided — treat as solid
+            // to avoid generating faces on those edges.
+            return VoxelType.STONE;
         }
-
-        float avgNx = a.nx() + b.nx() + c.nx();
-        float avgNy = a.ny() + b.ny() + c.ny();
-        float avgNz = a.nz() + b.nz() + c.nz();
-        if (faceNx * avgNx + faceNy * avgNy + faceNz * avgNz < 0f) {
-            IntersectionPoint temp = b;
-            b = c;
-            c = temp;
+        if (x >= SIZE) {
+            return (plusX != null) ? plusX.getVoxel(0, y, z) : null;
         }
-
-        MeshSectionBuilder section = sections.currentSectionForTriangle();
-        short baseIndex = (short) section.vertexCount();
-
-        appendVertex(section.vertices, a, type);
-        appendVertex(section.vertices, b, type);
-        appendVertex(section.vertices, c, type);
-
-        section.indices.add(baseIndex);
-        section.indices.add((short) (baseIndex + 1));
-        section.indices.add((short) (baseIndex + 2));
+        if (y >= SIZE) {
+            return (plusY != null) ? plusY.getVoxel(x, 0, z) : null;
+        }
+        if (z >= SIZE) {
+            return (plusZ != null) ? plusZ.getVoxel(x, y, 0) : null;
+        }
+        return center.getVoxel(x, y, z);
     }
 
-    private static void appendVertex(FloatCollector vertices, IntersectionPoint point, VoxelType type) {
+    /** Emits two triangles forming a quad for the given face of voxel (x, y, z). */
+    private static void emitQuad(int x, int y, int z,
+                                 int faceIndex,
+                                 VoxelType type,
+                                 SectionCollector sections) {
+        float[] normal = {
+                FACE_NORMALS[faceIndex][0],
+                FACE_NORMALS[faceIndex][1],
+                FACE_NORMALS[faceIndex][2]
+        };
+        float[][] quad = FACE_QUADS[faceIndex];
         Color color = type.getBaseColor();
-        vertices.add(point.x());
-        vertices.add(point.y());
-        vertices.add(point.z());
-        vertices.add(point.nx());
-        vertices.add(point.ny());
-        vertices.add(point.nz());
-        vertices.add(color.r);
-        vertices.add(color.g);
-        vertices.add(color.b);
-        vertices.add(color.a);
-    }
 
-    private static IntersectionPoint interpolateIntersection(CellCorner a,
-                                                             CellCorner b,
-                                                             float[][][] density) {
-        float aDensity = a.density();
-        float bDensity = b.density();
-        float denominator = bDensity - aDensity;
-        float t = Math.abs(denominator) < 1.0e-6f ? 0.5f : (ISO_LEVEL - aDensity) / denominator;
-        t = clamp01(t);
+        MeshSectionBuilder section = sections.currentSectionForQuad();
+        short base = (short) section.vertexCount();
 
-        float x = lerp(a.x(), b.x(), t);
-        float y = lerp(a.y(), b.y(), t);
-        float z = lerp(a.z(), b.z(), t);
-        float[] gradient = sampleGradient(x, y, z, density);
-        VoxelType type = dominantSolidType(a.type(), aDensity, b.type(), bDensity);
-        return new IntersectionPoint(x, y, z, gradient[0], gradient[1], gradient[2], type);
-    }
-
-    private static float[] sampleGradient(float x, float y, float z, float[][][] density) {
-        float dx = sampleDensityClamped(density, x + 0.5f, y, z) - sampleDensityClamped(density, x - 0.5f, y, z);
-        float dy = sampleDensityClamped(density, x, y + 0.5f, z) - sampleDensityClamped(density, x, y - 0.5f, z);
-        float dz = sampleDensityClamped(density, x, y, z + 0.5f) - sampleDensityClamped(density, x, y, z - 0.5f);
-        float length = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-        if (length <= 1.0e-6f) {
-            return new float[]{0f, 1f, 0f};
+        for (float[] corner : quad) {
+            section.vertices.add(x + corner[0]);
+            section.vertices.add(y + corner[1]);
+            section.vertices.add(z + corner[2]);
+            section.vertices.add(normal[0]);
+            section.vertices.add(normal[1]);
+            section.vertices.add(normal[2]);
+            section.vertices.add(color.r);
+            section.vertices.add(color.g);
+            section.vertices.add(color.b);
+            section.vertices.add(color.a);
         }
-        return new float[]{dx / length, dy / length, dz / length};
-    }
 
-    private static float sampleDensityClamped(float[][][] density, float x, float y, float z) {
-        float clampedX = clampToScratch(x);
-        float clampedY = clampToScratch(y);
-        float clampedZ = clampToScratch(z);
-
-        int x0 = (int) Math.floor(clampedX);
-        int y0 = (int) Math.floor(clampedY);
-        int z0 = (int) Math.floor(clampedZ);
-        int x1 = Math.min(x0 + 1, SIZE);
-        int y1 = Math.min(y0 + 1, SIZE);
-        int z1 = Math.min(z0 + 1, SIZE);
-
-        float tx = clampedX - x0;
-        float ty = clampedY - y0;
-        float tz = clampedZ - z0;
-
-        float c000 = density[x0][y0][z0];
-        float c100 = density[x1][y0][z0];
-        float c010 = density[x0][y1][z0];
-        float c110 = density[x1][y1][z0];
-        float c001 = density[x0][y0][z1];
-        float c101 = density[x1][y0][z1];
-        float c011 = density[x0][y1][z1];
-        float c111 = density[x1][y1][z1];
-
-        float c00 = lerp(c000, c100, tx);
-        float c10 = lerp(c010, c110, tx);
-        float c01 = lerp(c001, c101, tx);
-        float c11 = lerp(c011, c111, tx);
-        float c0 = lerp(c00, c10, ty);
-        float c1 = lerp(c01, c11, ty);
-        return lerp(c0, c1, tz);
-    }
-
-    private static void fillScratch(VoxelChunk center,
-                                    VoxelChunk plusX,
-                                    VoxelChunk plusY,
-                                    VoxelChunk plusZ,
-                                    float[][][] density,
-                                    VoxelType[][][] types) {
-        for (int x = 0; x < SCRATCH_SIZE; x++) {
-            for (int y = 0; y < SCRATCH_SIZE; y++) {
-                for (int z = 0; z < SCRATCH_SIZE; z++) {
-                    VoxelChunk chunk = center;
-                    int sx = x;
-                    int sy = y;
-                    int sz = z;
-
-                    if (x == SIZE) {
-                        chunk = plusX;
-                        sx = 0;
-                    }
-                    if (y == SIZE) {
-                        chunk = plusY;
-                        sy = 0;
-                    }
-                    if (z == SIZE) {
-                        chunk = plusZ;
-                        sz = 0;
-                    }
-
-                    if (x == SIZE && y == SIZE) {
-                        chunk = plusX != null ? plusX : plusY;
-                        sx = 0;
-                        sy = 0;
-                    }
-                    if (x == SIZE && z == SIZE) {
-                        chunk = plusX != null ? plusX : plusZ;
-                        sx = 0;
-                        sz = 0;
-                    }
-                    if (y == SIZE && z == SIZE) {
-                        chunk = plusY != null ? plusY : plusZ;
-                        sy = 0;
-                        sz = 0;
-                    }
-                    if (x == SIZE && y == SIZE && z == SIZE) {
-                        chunk = plusX != null ? plusX : (plusY != null ? plusY : plusZ);
-                        sx = 0;
-                        sy = 0;
-                        sz = 0;
-                    }
-
-                    if (chunk == null) {
-                        density[x][y][z] = -1f;
-                        types[x][y][z] = VoxelType.AIR;
-                    } else {
-                        density[x][y][z] = chunk.getDensity(sx, sy, sz);
-                        types[x][y][z] = chunk.getVoxel(sx, sy, sz);
-                    }
-                }
-            }
-        }
+        // Triangle 1: 0-1-2
+        section.indices.add(base);
+        section.indices.add((short) (base + 1));
+        section.indices.add((short) (base + 2));
+        // Triangle 2: 0-2-3
+        section.indices.add(base);
+        section.indices.add((short) (base + 2));
+        section.indices.add((short) (base + 3));
     }
 
     public static boolean hasRequiredNeighbors(ChunkKey key,
@@ -346,93 +179,18 @@ public final class ChunkMesher {
                 && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1)) != null;
     }
 
-    private static boolean crossesIsoSurface(float a, float b) {
-        boolean aInside = a > ISO_LEVEL;
-        boolean bInside = b > ISO_LEVEL;
-        return aInside != bInside;
-    }
-
-    private static VoxelType chooseSurfaceType(CellCorner[] corners) {
-        VoxelType bestType = VoxelType.STONE;
-        float bestDensity = Float.NEGATIVE_INFINITY;
-        boolean foundTransparent = false;
-        for (CellCorner corner : corners) {
-            if (corner.density() <= ISO_LEVEL || corner.type() == null || !corner.type().isSolid()) {
-                continue;
-            }
-            if (corner.type().isTransparent()) {
-                if (!foundTransparent || corner.density() > bestDensity) {
-                    bestType = corner.type();
-                    bestDensity = corner.density();
-                    foundTransparent = true;
-                }
-            } else if (!foundTransparent && corner.density() > bestDensity) {
-                bestType = corner.type();
-                bestDensity = corner.density();
-            }
-        }
-        return bestDensity == Float.NEGATIVE_INFINITY ? VoxelType.STONE : bestType;
-    }
-
-    private static VoxelType dominantSolidType(VoxelType aType,
-                                               float aDensity,
-                                               VoxelType bType,
-                                               float bDensity) {
-        VoxelType normalizedA = normalizeType(aType, aDensity);
-        VoxelType normalizedB = normalizeType(bType, bDensity);
-        boolean aSolid = aDensity > ISO_LEVEL && normalizedA.isSolid();
-        boolean bSolid = bDensity > ISO_LEVEL && normalizedB.isSolid();
-        if (aSolid && (!bSolid || aDensity >= bDensity)) {
-            return normalizedA;
-        }
-        if (bSolid) {
-            return normalizedB;
-        }
-        return normalizedA.isSolid() ? normalizedA : (normalizedB.isSolid() ? normalizedB : VoxelType.STONE);
-    }
-
-    private static VoxelType normalizeType(VoxelType type, float density) {
-        if (density <= ISO_LEVEL) {
-            return VoxelType.AIR;
-        }
-        if (type == null || !type.isSolid()) {
-            return VoxelType.STONE;
-        }
-        return type;
-    }
-
-    private static float lerp(float a, float b, float t) {
-        return a + (b - a) * t;
-    }
-
-    private static float clamp01(float value) {
-        return Math.max(0f, Math.min(1f, value));
-    }
-
-    private static float clampToScratch(float value) {
-        return Math.max(0f, Math.min(SIZE, value));
-    }
-
-    private static float clamp(float value, float min, float max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    private record CellCorner(int x, int y, int z, float density, VoxelType type) {
-    }
-
-    private record IntersectionPoint(float x, float y, float z,
-                                     float nx, float ny, float nz,
-                                     VoxelType type) {
-    }
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
 
     private static final class SectionCollector {
-        private static final int TRIANGLE_VERTEX_COUNT = 3;
+        private static final int QUAD_VERTEX_COUNT = 4;
 
         private final List<MeshSectionBuilder> sections = new ArrayList<>();
 
-        MeshSectionBuilder currentSectionForTriangle() {
+        MeshSectionBuilder currentSectionForQuad() {
             MeshSectionBuilder current = currentSection();
-            if (current.vertexCount() + TRIANGLE_VERTEX_COUNT > MeshData.MAX_VERTICES_PER_SECTION) {
+            if (current.vertexCount() + QUAD_VERTEX_COUNT > MeshData.MAX_VERTICES_PER_SECTION) {
                 current = new MeshSectionBuilder();
                 sections.add(current);
             }
@@ -452,7 +210,9 @@ public final class ChunkMesher {
             List<MeshSectionData> result = new ArrayList<>();
             for (MeshSectionBuilder section : sections) {
                 if (!section.isEmpty()) {
-                    result.add(new MeshSectionData(section.vertices.toFloatArray(), section.indices.toShortArray()));
+                    result.add(new MeshSectionData(
+                            section.vertices.toFloatArray(),
+                            section.indices.toShortArray()));
                 }
             }
             return result;
@@ -460,8 +220,7 @@ public final class ChunkMesher {
 
         private MeshSectionBuilder currentSection() {
             if (sections.isEmpty()) {
-                MeshSectionBuilder section = new MeshSectionBuilder();
-                sections.add(section);
+                sections.add(new MeshSectionBuilder());
             }
             return sections.get(sections.size() - 1);
         }
