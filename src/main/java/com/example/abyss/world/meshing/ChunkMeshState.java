@@ -2,6 +2,9 @@ package com.example.abyss.world.meshing;
 
 import com.badlogic.gdx.graphics.Mesh;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Render-side state for a loaded chunk.
  * <p>
@@ -13,8 +16,8 @@ public class ChunkMeshState {
     private boolean meshDirty = true;
     private boolean meshQueued;
     private MeshData pendingMeshData;
-    private Mesh opaqueMesh;
-    private Mesh transparentMesh;
+    private List<Mesh> opaqueMeshes = new ArrayList<>();
+    private List<Mesh> transparentMeshes = new ArrayList<>();
 
     public boolean isMeshDirty() {
         return meshDirty;
@@ -40,19 +43,19 @@ public class ChunkMeshState {
         this.pendingMeshData = pendingMeshData;
     }
 
-    public Mesh getOpaqueMesh() {
-        return opaqueMesh;
+    public List<Mesh> getOpaqueMeshes() {
+        return opaqueMeshes;
     }
 
-    public void setOpaqueMesh(Mesh opaqueMesh) {
-        this.opaqueMesh = opaqueMesh;
+    public void setOpaqueMeshes(List<Mesh> opaqueMeshes) {
+        this.opaqueMeshes = opaqueMeshes;
     }
 
-    public Mesh getTransparentMesh() {
-        return transparentMesh;
+    public List<Mesh> getTransparentMeshes() {
+        return transparentMeshes;
     }
 
-    public void setTransparentMesh(Mesh transparentMesh) {
-        this.transparentMesh = transparentMesh;
+    public void setTransparentMeshes(List<Mesh> transparentMeshes) {
+        this.transparentMeshes = transparentMeshes;
     }
 }

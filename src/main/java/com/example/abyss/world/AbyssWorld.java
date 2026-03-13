@@ -187,10 +187,7 @@ public class AbyssWorld {
     public Iterable<Mesh> getOpaqueMeshes() {
         List<Mesh> meshes = new ArrayList<>();
         for (LoadedChunk loadedChunk : chunkManager.getLoadedChunkEntries()) {
-            Mesh mesh = loadedChunk.renderState().getOpaqueMesh();
-            if (mesh != null) {
-                meshes.add(mesh);
-            }
+            meshes.addAll(loadedChunk.renderState().getOpaqueMeshes());
         }
         return meshes;
     }
@@ -198,10 +195,7 @@ public class AbyssWorld {
     public Iterable<Mesh> getTransparentMeshes() {
         List<Mesh> meshes = new ArrayList<>();
         for (LoadedChunk loadedChunk : chunkManager.getLoadedChunkEntries()) {
-            Mesh mesh = loadedChunk.renderState().getTransparentMesh();
-            if (mesh != null) {
-                meshes.add(mesh);
-            }
+            meshes.addAll(loadedChunk.renderState().getTransparentMeshes());
         }
         return meshes;
     }

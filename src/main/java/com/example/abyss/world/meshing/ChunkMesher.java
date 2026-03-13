@@ -62,30 +62,22 @@ public final class ChunkMesher {
 
         fillScratch(center, plusX, plusY, plusZ, density, types);
 
-        FloatCollector opaqueVertices = new FloatCollector();
-        ShortCollector opaqueIndices = new ShortCollector();
-        FloatCollector transparentVertices = new FloatCollector();
-        ShortCollector transparentIndices = new ShortCollector();
+        SectionCollector opaqueSections = new SectionCollector();
+        SectionCollector transparentSections = new SectionCollector();
 
         for (int x = 0; x < SIZE; x++) {
             for (int y = 0; y < SIZE; y++) {
                 for (int z = 0; z < SIZE; z++) {
-                    emitCell(x, y, z, density, types,
-                            opaqueVertices, opaqueIndices,
-                            transparentVertices, transparentIndices);
+                    emitCell(x, y, z, density, types, opaqueSections, transparentSections);
                 }
             }
         }
 
-        if (opaqueIndices.isEmpty() && transparentIndices.isEmpty()) {
+        if (opaqueSections.isEmpty() && transparentSections.isEmpty()) {
             return MeshData.EMPTY;
         }
 
-        return new MeshData(
-                opaqueVertices.toArray(),
-                opaqueIndices.toArray(),
-                transparentVertices.toArray(),
-                transparentIndices.toArray());
+        return new MeshData(opaqueSections.toSections(), transparentSections.toSections());
     }
 
     private static void emitCell(int x,
@@ -93,10 +85,8 @@ public final class ChunkMesher {
                                  int z,
                                  float[][][] density,
                                  VoxelType[][][] types,
-                                 FloatCollector opaqueVertices,
-                                 ShortCollector opaqueIndices,
-                                 FloatCollector transparentVertices,
-                                 ShortCollector transparentIndices) {
+                                 SectionCollector opaqueSections,
+                                 SectionCollector transparentSections) {
         CellCorner[] corners = new CellCorner[8];
         boolean hasSolid = false;
         boolean hasAir = false;
@@ -119,19 +109,15 @@ public final class ChunkMesher {
         }
 
         for (int[] tetra : TETRAHEDRA) {
-            emitTetrahedron(corners, tetra, density,
-                    opaqueVertices, opaqueIndices,
-                    transparentVertices, transparentIndices);
+            emitTetrahedron(corners, tetra, density, opaqueSections, transparentSections);
         }
     }
 
     private static void emitTetrahedron(CellCorner[] cellCorners,
                                         int[] tetra,
                                         float[][][] density,
-                                        FloatCollector opaqueVertices,
-                                        ShortCollector opaqueIndices,
-                                        FloatCollector transparentVertices,
-                                        ShortCollector transparentIndices) {
+                                        SectionCollector opaqueSections,
+                                        SectionCollector transparentSections) {
         CellCorner[] tetraCorners = new CellCorner[4];
         boolean hasSolid = false;
         boolean hasAir = false;
@@ -163,17 +149,16 @@ public final class ChunkMesher {
         }
 
         VoxelType surfaceType = chooseSurfaceType(tetraCorners);
-        FloatCollector vertices = surfaceType.isTransparent() ? transparentVertices : opaqueVertices;
-        ShortCollector indices = surfaceType.isTransparent() ? transparentIndices : opaqueIndices;
+        SectionCollector sections = surfaceType.isTransparent() ? transparentSections : opaqueSections;
 
         if (intersectionCount == 3) {
-            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, vertices, indices);
+            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, sections);
             return;
         }
 
         if (intersectionCount == 4) {
-            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, vertices, indices);
-            emitTriangle(intersections[0], intersections[2], intersections[3], surfaceType, vertices, indices);
+            emitTriangle(intersections[0], intersections[1], intersections[2], surfaceType, sections);
+            emitTriangle(intersections[0], intersections[2], intersections[3], surfaceType, sections);
         }
     }
 
@@ -181,8 +166,7 @@ public final class ChunkMesher {
                                      IntersectionPoint b,
                                      IntersectionPoint c,
                                      VoxelType type,
-                                     FloatCollector vertices,
-                                     ShortCollector indices) {
+                                     SectionCollector sections) {
         float ux = b.x() - a.x();
         float uy = b.y() - a.y();
         float uz = b.z() - a.z();
@@ -206,18 +190,16 @@ public final class ChunkMesher {
             c = temp;
         }
 
-        short baseIndex = (short) (vertices.size() / MeshData.FLOATS_PER_VERTEX);
-        if (baseIndex > Short.MAX_VALUE - 3) {
-            throw new IllegalStateException("Chunk mesh exceeded 16-bit index capacity during marching-cubes meshing.");
-        }
+        MeshSectionBuilder section = sections.currentSectionForTriangle();
+        short baseIndex = (short) section.vertexCount();
 
-        appendVertex(vertices, a, type);
-        appendVertex(vertices, b, type);
-        appendVertex(vertices, c, type);
+        appendVertex(section.vertices, a, type);
+        appendVertex(section.vertices, b, type);
+        appendVertex(section.vertices, c, type);
 
-        indices.add(baseIndex);
-        indices.add((short) (baseIndex + 1));
-        indices.add((short) (baseIndex + 2));
+        section.indices.add(baseIndex);
+        section.indices.add((short) (baseIndex + 1));
+        section.indices.add((short) (baseIndex + 2));
     }
 
     private static void appendVertex(FloatCollector vertices, IntersectionPoint point, VoxelType type) {
@@ -443,47 +425,106 @@ public final class ChunkMesher {
                                      VoxelType type) {
     }
 
-    private static final class FloatCollector {
-        private final List<Float> values = new ArrayList<>();
+    private static final class SectionCollector {
+        private static final int TRIANGLE_VERTEX_COUNT = 3;
 
-        void add(float value) {
-            values.add(value);
-        }
+        private final List<MeshSectionBuilder> sections = new ArrayList<>();
 
-        int size() {
-            return values.size();
+        MeshSectionBuilder currentSectionForTriangle() {
+            MeshSectionBuilder current = currentSection();
+            if (current.vertexCount() + TRIANGLE_VERTEX_COUNT > MeshData.MAX_VERTICES_PER_SECTION) {
+                current = new MeshSectionBuilder();
+                sections.add(current);
+            }
+            return current;
         }
 
         boolean isEmpty() {
-            return values.isEmpty();
+            for (MeshSectionBuilder section : sections) {
+                if (!section.isEmpty()) {
+                    return false;
+                }
+            }
+            return true;
         }
 
-        float[] toArray() {
-            float[] result = new float[values.size()];
-            for (int i = 0; i < values.size(); i++) {
-                result[i] = values.get(i);
+        List<MeshSectionData> toSections() {
+            List<MeshSectionData> result = new ArrayList<>();
+            for (MeshSectionBuilder section : sections) {
+                if (!section.isEmpty()) {
+                    result.add(new MeshSectionData(section.vertices.toFloatArray(), section.indices.toShortArray()));
+                }
             }
             return result;
+        }
+
+        private MeshSectionBuilder currentSection() {
+            if (sections.isEmpty()) {
+                MeshSectionBuilder section = new MeshSectionBuilder();
+                sections.add(section);
+            }
+            return sections.get(sections.size() - 1);
+        }
+    }
+
+    private static final class MeshSectionBuilder {
+        private final FloatCollector vertices = new FloatCollector();
+        private final ShortCollector indices = new ShortCollector();
+
+        int vertexCount() {
+            return vertices.elementCount() / MeshData.FLOATS_PER_VERTEX;
+        }
+
+        boolean isEmpty() {
+            return vertices.elementCount() == 0 || indices.elementCount() == 0;
+        }
+    }
+
+    private static final class FloatCollector {
+        private float[] values = new float[256];
+        private int size;
+
+        void add(float value) {
+            if (size == values.length) {
+                float[] next = new float[values.length * 2];
+                System.arraycopy(values, 0, next, 0, values.length);
+                values = next;
+            }
+            values[size++] = value;
+        }
+
+        int elementCount() {
+            return size;
+        }
+
+        float[] toFloatArray() {
+            float[] out = new float[size];
+            System.arraycopy(values, 0, out, 0, size);
+            return out;
         }
     }
 
     private static final class ShortCollector {
-        private final List<Short> values = new ArrayList<>();
+        private short[] values = new short[256];
+        private int size;
 
         void add(short value) {
-            values.add(value);
-        }
-
-        boolean isEmpty() {
-            return values.isEmpty();
-        }
-
-        short[] toArray() {
-            short[] result = new short[values.size()];
-            for (int i = 0; i < values.size(); i++) {
-                result[i] = values.get(i);
+            if (size == values.length) {
+                short[] next = new short[values.length * 2];
+                System.arraycopy(values, 0, next, 0, values.length);
+                values = next;
             }
-            return result;
+            values[size++] = value;
+        }
+
+        int elementCount() {
+            return size;
+        }
+
+        short[] toShortArray() {
+            short[] out = new short[size];
+            System.arraycopy(values, 0, out, 0, size);
+            return out;
         }
     }
 }

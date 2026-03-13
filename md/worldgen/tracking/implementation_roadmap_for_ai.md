@@ -345,6 +345,16 @@ Add tests for at least:
 ## Objective
 Use existing worldgen metadata to drive visuals in a clean and reusable way.
 
+### Implementation status note
+An initial visualization MVP is now in place in the desktop LibGDX app:
+- a render-side sample contract under `world/render`
+- a deterministic 2D X/Y slice viewer backed by `AbyssWorld`
+- color resolution driven by `VoxelType.baseColor`, `LayerConfig.colorPalette`, and `LayerConfig.visibility`
+- transition overlay and chunk-grid rendering for debugging seams and layer boundaries
+
+This is intentionally a debug visualization step, not the final production renderer.
+It satisfies the architectural direction of letting rendering consume worldgen metadata through explicit interfaces without moving rendering concerns into `world/gen`.
+
 ## Why this matters
 The project already stores rendering-relevant metadata:
 - voxel base colors

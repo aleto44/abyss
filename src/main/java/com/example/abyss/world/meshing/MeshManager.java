@@ -9,6 +9,7 @@ import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.VoxelChunk;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -75,11 +76,11 @@ public class MeshManager {
             return;
         }
 
-        disposeMesh(renderState.getOpaqueMesh());
-        disposeMesh(renderState.getTransparentMesh());
+        disposeMeshes(renderState.getOpaqueMeshes());
+        disposeMeshes(renderState.getTransparentMeshes());
 
-        renderState.setOpaqueMesh(buildMesh(pending.opaqueVertices(), pending.opaqueIndices()));
-        renderState.setTransparentMesh(buildMesh(pending.transparentVertices(), pending.transparentIndices()));
+        renderState.setOpaqueMeshes(buildMeshes(pending.opaqueSections()));
+        renderState.setTransparentMeshes(buildMeshes(pending.transparentSections()));
         renderState.setPendingMeshData(null);
     }
 
@@ -92,10 +93,10 @@ public class MeshManager {
     }
 
     public void disposeChunkMeshes(ChunkMeshState renderState) {
-        disposeMesh(renderState.getOpaqueMesh());
-        disposeMesh(renderState.getTransparentMesh());
-        renderState.setOpaqueMesh(null);
-        renderState.setTransparentMesh(null);
+        disposeMeshes(renderState.getOpaqueMeshes());
+        disposeMeshes(renderState.getTransparentMeshes());
+        renderState.setOpaqueMeshes(new ArrayList<>());
+        renderState.setTransparentMeshes(new ArrayList<>());
         renderState.setPendingMeshData(null);
         renderState.setMeshQueued(false);
     }
@@ -104,10 +105,23 @@ public class MeshManager {
         taskQueue.shutdown();
     }
 
-    private static Mesh buildMesh(float[] vertices, short[] indices) {
-        if (vertices.length == 0 || indices.length == 0) {
+    private static List<Mesh> buildMeshes(List<MeshSectionData> sections) {
+        List<Mesh> meshes = new ArrayList<>();
+        for (MeshSectionData section : sections) {
+            Mesh mesh = buildMesh(section);
+            if (mesh != null) {
+                meshes.add(mesh);
+            }
+        }
+        return meshes;
+    }
+
+    private static Mesh buildMesh(MeshSectionData section) {
+        if (section == null || section.isEmpty()) {
             return null;
         }
+        float[] vertices = section.vertices();
+        short[] indices = section.indices();
         Mesh mesh = new Mesh(true,
                 vertices.length / MeshData.FLOATS_PER_VERTEX,
                 indices.length,
@@ -119,9 +133,14 @@ public class MeshManager {
         return mesh;
     }
 
-    private static void disposeMesh(Mesh mesh) {
-        if (mesh != null) {
-            mesh.dispose();
+    private static void disposeMeshes(List<Mesh> meshes) {
+        if (meshes == null) {
+            return;
+        }
+        for (Mesh mesh : meshes) {
+            if (mesh != null) {
+                mesh.dispose();
+            }
         }
     }
 }

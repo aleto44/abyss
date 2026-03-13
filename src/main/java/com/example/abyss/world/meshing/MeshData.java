@@ -1,10 +1,12 @@
 package com.example.abyss.world.meshing;
 
+import java.util.List;
+
 /**
  * Raw CPU-side mesh geometry produced by the chunk mesher.
  * <p>
  * Kept as plain arrays so it can be created safely on a background thread.
- * The main (GL) thread promotes this into a real LibGDX {@link com.badlogic.gdx.graphics.Mesh}
+ * The main (GL) thread promotes this into real LibGDX meshes
  * via the meshing pipeline.
  * </p>
  * <p>
@@ -17,26 +19,54 @@ package com.example.abyss.world.meshing;
  * Total: {@value #FLOATS_PER_VERTEX} floats per vertex.
  * </p>
  *
- * @param opaqueVertices      vertex buffer for opaque geometry (may be empty, never null)
- * @param opaqueIndices       index buffer for opaque geometry  (may be empty, never null)
- * @param transparentVertices vertex buffer for transparent geometry (may be empty, never null)
- * @param transparentIndices  index buffer for transparent geometry  (may be empty, never null)
+ * @param opaqueSections      mesh sections for opaque geometry (may be empty, never null)
+ * @param transparentSections mesh sections for transparent geometry (may be empty, never null)
  */
 public record MeshData(
-        float[] opaqueVertices,
-        short[] opaqueIndices,
-        float[] transparentVertices,
-        short[] transparentIndices
+        List<MeshSectionData> opaqueSections,
+        List<MeshSectionData> transparentSections
 ) {
     /** Number of floats per vertex: position(3) + normal(3) + color(4). */
     public static final int FLOATS_PER_VERTEX = 10;
 
-    /** Singleton empty result — reused when a chunk produces no geometry. */
-    public static final MeshData EMPTY = new MeshData(
-            new float[0], new short[0], new float[0], new short[0]);
+    /** Maximum vertex count addressable by 16-bit mesh indices. */
+    public static final int MAX_VERTICES_PER_SECTION = Short.MAX_VALUE;
 
-    /** Returns true if both the opaque and transparent buffers are empty. */
+    /** Singleton empty result — reused when a chunk produces no geometry. */
+    public static final MeshData EMPTY = new MeshData(List.of(), List.of());
+
+    /** Returns true if both the opaque and transparent section lists are empty. */
     public boolean isEmpty() {
-        return opaqueIndices.length == 0 && transparentIndices.length == 0;
+        return opaqueSections.isEmpty() && transparentSections.isEmpty();
+    }
+
+    public int opaqueIndexCount() {
+        return sumIndexCount(opaqueSections);
+    }
+
+    public int transparentIndexCount() {
+        return sumIndexCount(transparentSections);
+    }
+
+    public float[] firstOpaqueVertices() {
+        if (opaqueSections.isEmpty()) {
+            return new float[0];
+        }
+        return opaqueSections.get(0).vertices();
+    }
+
+    public float[] firstTransparentVertices() {
+        if (transparentSections.isEmpty()) {
+            return new float[0];
+        }
+        return transparentSections.get(0).vertices();
+    }
+
+    private static int sumIndexCount(List<MeshSectionData> sections) {
+        int total = 0;
+        for (MeshSectionData section : sections) {
+            total += section.indices().length;
+        }
+        return total;
     }
 }
