@@ -1,4 +1,4 @@
-package com.example.abyss.world.render;
+package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.gen.Layer;

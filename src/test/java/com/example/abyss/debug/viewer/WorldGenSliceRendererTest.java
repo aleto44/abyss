@@ -1,4 +1,4 @@
-package com.example.abyss.world.render;
+package com.example.abyss.debug.viewer;
 
 import com.example.abyss.world.AbyssWorld;
 import org.junit.jupiter.api.Test;
@@ -15,7 +15,7 @@ class WorldGenSliceRendererTest {
         world.init();
         try {
             WorldGenSliceRenderer renderer = new WorldGenSliceRenderer(
-                    new WorldGenSampler(world),
+                    new ChunkStreamingWorldGenSampler(world),
                     new WorldGenColorResolver()
             );
 

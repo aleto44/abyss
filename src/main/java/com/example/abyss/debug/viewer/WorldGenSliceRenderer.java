@@ -1,4 +1,4 @@
-package com.example.abyss.world.render;
+package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.graphics.glutils.ShapeRenderer;
@@ -19,7 +19,7 @@ public class WorldGenSliceRenderer {
     private static final int DEFAULT_SAMPLES_TALL = 64;
     private static final int DEFAULT_WORLD_STEP = 16;
 
-    private final WorldGenSampler sampler;
+    private final WorldGenDataSampler sampler;
     private final WorldGenColorResolver colorResolver;
 
     private int sliceWorldZ = DEFAULT_SLICE_Z;
@@ -32,7 +32,7 @@ public class WorldGenSliceRenderer {
     private float[] cachedRgba;
     private boolean cacheDirty = true;
 
-    public WorldGenSliceRenderer(WorldGenSampler sampler, WorldGenColorResolver colorResolver) {
+    public WorldGenSliceRenderer(WorldGenDataSampler sampler, WorldGenColorResolver colorResolver) {
         this.sampler = sampler;
         this.colorResolver = colorResolver;
     }

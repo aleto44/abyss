@@ -1,4 +1,4 @@
-package com.example.abyss.world.render;
+package com.example.abyss.debug.viewer;
 
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerConfig;
@@ -6,10 +6,6 @@ import com.example.abyss.world.voxel.VoxelType;
 
 /**
  * Immutable render-facing sample for a single world-space position.
- * <p>
- * Keeps visualization logic decoupled from the generation internals while still
- * exposing the data needed for deterministic debug rendering.
- * </p>
  *
  * @param worldX world X coordinate
  * @param worldY world Y coordinate

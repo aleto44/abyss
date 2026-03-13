@@ -2,18 +2,30 @@
 
 A Java + LibGDX prototype for Abyss world generation, chunk streaming, and smooth voxel meshing.
 
-## Worldgen visualization MVP
+## Debug viewers
 
-The desktop app now includes a deterministic 2D X/Y slice viewer for world generation.
-It samples the existing `AbyssWorld` and `Layer` metadata without mixing rendering logic into the generation package.
+Debug applications now live under `src/main/java/com/example/abyss/debug/`.
 
-### Current viewer controls
-- `Arrow keys`: move the slice center in world X/Y
-- `Page Up` / `Page Down`: move the sampled Z slice
-- `+` / `-`: zoom in or out by changing world sample step size
+### Available debug clients
+- `com.example.abyss.debug.ChunkStreamingDebugLauncher`
+  - uses `AbyssWorld` and the live chunk-streaming pipeline
+  - useful for streaming, chunk lifecycle, and meshing/debug observation
+- `com.example.abyss.debug.ProceduralGeneratorDebugLauncher`
+  - samples `ProceduralGenerator` directly
+  - bypasses chunk streaming and avoids `AbyssWorld.getOrGenerateChunk(...)`
+  - useful for fast slice inspection of raw worldgen output
+
+### Current default entry point
+`com.example.abyss.Main` currently delegates to `ChunkStreamingDebugLauncher` so the existing Gradle application entry still works.
+
+### Viewer controls
+- `W`, `A`, `S`, `D`: move the slice center in world X/Y
+- `Space`: move the sampled Z slice forward
+- `Left Ctrl` / `Right Ctrl`: move the sampled Z slice backward
+- `Mouse wheel`: zoom in or out by changing world sample step size
 - `G`: toggle chunk-grid overlay
 
-### What the viewer shows
+### What the slice viewer shows
 - voxel/material colors driven by `VoxelType.baseColor`
 - open-air tint influenced by `LayerConfig.colorPalette` and `LayerConfig.visibility`
 - transition-zone striping for easier boundary inspection
