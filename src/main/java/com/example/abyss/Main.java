@@ -1,6 +1,6 @@
 package com.example.abyss;
 
-import com.example.abyss.debug.ChunkStreamingDebugLauncher;
+import com.example.abyss.debug.FirstPersonWorldDebugLauncher;
 
 /**
  * Temporary application entry point that delegates to the isolated debug launcher.
@@ -11,6 +11,6 @@ public final class Main {
     }
 
     public static void main(String[] args) {
-        ChunkStreamingDebugLauncher.main(args);
+        FirstPersonWorldDebugLauncher.main(args);
     }
 }
