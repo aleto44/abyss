@@ -8,6 +8,11 @@ import com.example.abyss.world.voxel.VoxelType;
 
 /**
  * Debug sampler backed by the live {@link AbyssWorld} chunk-streaming pipeline.
+ * <p>
+ * Never blocks the main thread — if a chunk is not yet loaded it queues async
+ * generation, writes a transparent fallback color, and returns {@code false} so
+ * the caller knows the result is incomplete and should be re-sampled later.
+ * </p>
  */
 public class ChunkStreamingWorldGenSampler implements WorldGenDataSampler {
 
@@ -17,12 +22,31 @@ public class ChunkStreamingWorldGenSampler implements WorldGenDataSampler {
         this.world = world;
     }
 
+    /**
+     * Samples a color for the given world position without blocking.
+     *
+     * @return {@code true} if the chunk was loaded and a real color was written;
+     *         {@code false} if the chunk was missing (async request queued, fallback written).
+     */
     @Override
-    public void sampleColor(int worldX,
-                            int worldY,
-                            int worldZ,
-                            WorldGenColorResolver colorResolver,
-                            Color outColor) {
+    public boolean sampleColor(int worldX,
+                                int worldY,
+                                int worldZ,
+                                WorldGenColorResolver colorResolver,
+                                Color outColor) {
+        float density = world.tryGetDensityAt(worldX, worldY, worldZ);
+        if (Float.isNaN(density)) {
+            // Chunk not yet loaded — write a dim placeholder and signal a miss.
+            outColor.set(0.04f, 0.04f, 0.06f, 1f);
+            return false;
+        }
+
+        VoxelType voxelType = world.tryGetVoxelAt(worldX, worldY, worldZ);
+        if (voxelType == null) {
+            outColor.set(0.04f, 0.04f, 0.06f, 1f);
+            return false;
+        }
+
         Layer layer = Layer.forY(worldY);
         Layer.TransitionInfo transition = Layer.getTransition(worldY);
         LayerConfig effectiveConfig = layer.getConfig();
@@ -32,8 +56,7 @@ public class ChunkStreamingWorldGenSampler implements WorldGenDataSampler {
             inTransition = true;
         }
 
-        float density = world.getDensityAt(worldX, worldY, worldZ);
-        VoxelType voxelType = world.getVoxelAt(worldX, worldY, worldZ);
         colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveConfig, inTransition, outColor);
+        return true;
     }
 }

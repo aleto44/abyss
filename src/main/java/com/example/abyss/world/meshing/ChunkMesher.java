@@ -99,7 +99,18 @@ public final class ChunkMesher {
             int nz = z + normal[2];
 
             VoxelType neighbour = sampleNeighbour(nx, ny, nz, center, plusX, plusY, plusZ);
+
+            // Cull face if neighbour is solid and opaque.
             if (neighbour != null && neighbour.isSolid() && !neighbour.isTransparent()) {
+                continue;
+            }
+            // Cull face between two voxels of the same transparent type (e.g. water-water interior).
+            if (neighbour == type && type.isTransparent()) {
+                continue;
+            }
+            // Cull face if current voxel is non-solid (e.g. water) and neighbour is solid —
+            // the solid surface already covers this boundary.
+            if (!type.isSolid() && neighbour != null && neighbour.isSolid()) {
                 continue;
             }
 

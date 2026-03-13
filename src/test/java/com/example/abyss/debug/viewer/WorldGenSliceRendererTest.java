@@ -30,7 +30,7 @@ class WorldGenSliceRendererTest {
             renderer.toggleChunkGrid();
 
             assertEquals(32, renderer.getSliceWorldZ());
-            assertEquals(-1296, renderer.getCenterWorldY());
+            assertEquals(-96, renderer.getCenterWorldY());
             assertEquals(8, renderer.getWorldStep());
             assertTrue(renderer.isShowChunkGrid());
             assertTrue(renderer.isCacheDirty());

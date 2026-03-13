@@ -65,8 +65,6 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
     @Override
     protected void onBeforeRender() {
         world.pollCompletedChunks();
-        world.queueDirtyMeshes();
-        world.pollCompletedMeshes();
     }
 
     @Override

@@ -47,6 +47,27 @@ public class AbyssWorld {
     }
 
     /**
+     * Returns the {@link VoxelType} at the given world coordinates without
+     * blocking.  If the chunk is not yet loaded, queues it for async generation
+     * and returns {@code null}.  Call {@link #pollCompletedChunks()} each frame
+     * to drain results.
+     */
+    public VoxelType tryGetVoxelAt(int worldX, int worldY, int worldZ) {
+        int cx = Math.floorDiv(worldX, CHUNK_SIZE);
+        int cy = Math.floorDiv(worldY, CHUNK_SIZE);
+        int cz = Math.floorDiv(worldZ, CHUNK_SIZE);
+        VoxelChunk chunk = chunkManager.getChunk(cx, cy, cz);
+        if (chunk == null) {
+            chunkManager.requestChunkAsync(cx, cy, cz);
+            return null;
+        }
+        int lx = Math.floorMod(worldX, CHUNK_SIZE);
+        int ly = Math.floorMod(worldY, CHUNK_SIZE);
+        int lz = Math.floorMod(worldZ, CHUNK_SIZE);
+        return chunk.getVoxel(lx, ly, lz);
+    }
+
+    /**
      * Returns the continuous density value at the given world coordinates.
      * Needed by the mesher.  Generates chunk synchronously if not yet loaded.
      */
@@ -56,6 +77,27 @@ public class AbyssWorld {
         int cz = Math.floorDiv(worldZ, CHUNK_SIZE);
         VoxelChunk chunk = chunkManager.getOrGenerateChunk(cx, cy, cz);
 
+        int lx = Math.floorMod(worldX, CHUNK_SIZE);
+        int ly = Math.floorMod(worldY, CHUNK_SIZE);
+        int lz = Math.floorMod(worldZ, CHUNK_SIZE);
+        return chunk.getDensity(lx, ly, lz);
+    }
+
+    /**
+     * Returns the continuous density at the given world coordinates without
+     * blocking.  If the chunk is not yet loaded, queues it for async generation
+     * and returns {@link Float#NaN}.  Call {@link #pollCompletedChunks()} each
+     * frame to drain results.
+     */
+    public float tryGetDensityAt(int worldX, int worldY, int worldZ) {
+        int cx = Math.floorDiv(worldX, CHUNK_SIZE);
+        int cy = Math.floorDiv(worldY, CHUNK_SIZE);
+        int cz = Math.floorDiv(worldZ, CHUNK_SIZE);
+        VoxelChunk chunk = chunkManager.getChunk(cx, cy, cz);
+        if (chunk == null) {
+            chunkManager.requestChunkAsync(cx, cy, cz);
+            return Float.NaN;
+        }
         int lx = Math.floorMod(worldX, CHUNK_SIZE);
         int ly = Math.floorMod(worldY, CHUNK_SIZE);
         int lz = Math.floorMod(worldZ, CHUNK_SIZE);

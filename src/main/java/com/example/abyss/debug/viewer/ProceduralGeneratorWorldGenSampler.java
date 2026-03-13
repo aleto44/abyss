@@ -24,11 +24,11 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
     }
 
     @Override
-    public void sampleColor(int worldX,
-                            int worldY,
-                            int worldZ,
-                            WorldGenColorResolver colorResolver,
-                            Color outColor) {
+    public boolean sampleColor(int worldX,
+                               int worldY,
+                               int worldZ,
+                               WorldGenColorResolver colorResolver,
+                               Color outColor) {
         Layer layer = Layer.forY(worldY);
         Layer.TransitionInfo transition = Layer.getTransition(worldY);
         LayerConfig effectiveConfig = layer.getConfig();
@@ -50,6 +50,7 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
         float density = data.getDensity(localX, localY, localZ);
         VoxelType voxelType = data.getType(localX, localY, localZ);
         colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveConfig, inTransition, outColor);
+        return true;
     }
 
     private record ChunkKey(int x, int y, int z) {

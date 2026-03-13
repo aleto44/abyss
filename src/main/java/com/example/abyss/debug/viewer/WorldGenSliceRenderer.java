@@ -150,19 +150,24 @@ public class WorldGenSliceRenderer {
         int startWorldY = centerWorldY + (samplesTall / 2) * worldStep;
         int colorIndex = 0;
         Color reusableColor = new Color();
+        boolean anyMiss = false;
 
         for (int sampleY = 0; sampleY < samplesTall; sampleY++) {
             int worldY = startWorldY - sampleY * worldStep;
             for (int sampleX = 0; sampleX < samplesWide; sampleX++) {
                 int worldX = startWorldX + sampleX * worldStep;
-                sampler.sampleColor(worldX, worldY, sliceWorldZ, colorResolver, reusableColor);
+                boolean hit = sampler.sampleColor(worldX, worldY, sliceWorldZ, colorResolver, reusableColor);
+                if (!hit) {
+                    anyMiss = true;
+                }
                 cachedRgba[colorIndex++] = reusableColor.r;
                 cachedRgba[colorIndex++] = reusableColor.g;
                 cachedRgba[colorIndex++] = reusableColor.b;
                 cachedRgba[colorIndex++] = reusableColor.a;
             }
         }
-        cacheDirty = false;
+        // Stay dirty if any chunks were missing so we re-sample once they arrive.
+        cacheDirty = anyMiss;
     }
 
     private void markCacheDirty() {

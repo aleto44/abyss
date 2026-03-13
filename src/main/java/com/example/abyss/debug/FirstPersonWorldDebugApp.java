@@ -135,6 +135,11 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private void renderWorld() {
         shaderProgram.bind();
+
+        // --- Opaque pass ---
+        Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
+        Gdx.gl.glDepthMask(true);
+        Gdx.gl.glDisable(GL20.GL_BLEND);
         for (LoadedChunk loadedChunk : world.getRenderableChunks()) {
             VoxelChunk chunk = loadedChunk.chunk();
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
@@ -143,10 +148,23 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
             for (Mesh mesh : loadedChunk.renderState().getOpaqueMeshes()) {
                 renderMesh(mesh);
             }
+        }
+
+        // --- Transparent pass (water, crystal, etc.) ---
+        Gdx.gl.glEnable(GL20.GL_BLEND);
+        Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
+        Gdx.gl.glDepthMask(false);
+        for (LoadedChunk loadedChunk : world.getRenderableChunks()) {
+            VoxelChunk chunk = loadedChunk.chunk();
+            modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
+            modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
+            shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
             for (Mesh mesh : loadedChunk.renderState().getTransparentMeshes()) {
                 renderMesh(mesh);
             }
         }
+        Gdx.gl.glDepthMask(true);
+        Gdx.gl.glDisable(GL20.GL_BLEND);
     }
 
     private void renderMesh(Mesh mesh) {
