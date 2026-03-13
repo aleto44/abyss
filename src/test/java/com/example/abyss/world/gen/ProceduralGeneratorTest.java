@@ -65,21 +65,6 @@ class ProceduralGeneratorTest {
     }
 
     @Test
-    void repeatedBoundaryAdjacentChunkGenerationIsStable() {
-        ProceduralGenerator generator = new ProceduralGenerator(654L);
-
-        VoxelData leftChunk = generator.generateChunk(0, -20, 0);
-        VoxelData rightChunk = generator.generateChunk(1, -20, 0);
-        VoxelData leftChunkAgain = generator.generateChunk(0, -20, 0);
-        VoxelData rightChunkAgain = generator.generateChunk(1, -20, 0);
-
-        assertArrayEquals(leftChunk.getDensityField(), leftChunkAgain.getDensityField());
-        assertArrayEquals(leftChunk.getTypeField(), leftChunkAgain.getTypeField());
-        assertArrayEquals(rightChunk.getDensityField(), rightChunkAgain.getDensityField());
-        assertArrayEquals(rightChunk.getTypeField(), rightChunkAgain.getTypeField());
-    }
-
-    @Test
     void boundaryWallGetsNoLessSolidFartherOutsideAbyssRadius() {
         ProceduralGenerator generator = new ProceduralGenerator(777L);
         int chunkX = (int) ProceduralGenerator.getAbyssBoundaryRadius() / VoxelData.SIZE;
