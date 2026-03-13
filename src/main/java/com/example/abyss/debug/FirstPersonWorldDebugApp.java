@@ -11,6 +11,7 @@ import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
+import com.badlogic.gdx.math.collision.BoundingBox;
 import com.example.abyss.debug.viewer.FirstPersonDebugController;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.LoadedChunk;
@@ -22,10 +23,10 @@ import com.example.abyss.world.VoxelChunk;
 public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private static final long WORLD_SEED = 42L;
-    private static final int INITIAL_HORIZONTAL_RADIUS = 2;
-    private static final int INITIAL_VERTICAL_RADIUS = 2;
-    private static final int STREAM_HORIZONTAL_RADIUS = 4;
-    private static final int STREAM_VERTICAL_RADIUS = 4;
+    private static final int INITIAL_HORIZONTAL_RADIUS = 3;
+    private static final int INITIAL_VERTICAL_RADIUS = 3;
+    private static final int STREAM_HORIZONTAL_RADIUS = 8;
+    private static final int STREAM_VERTICAL_RADIUS = 6;
     private static final float CAMERA_FOV_DEGREES = 75f;
     private static final float CAMERA_NEAR = 0.1f;
     private static final float CAMERA_FAR = 1200f;
@@ -37,6 +38,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private final Matrix4 modelMatrix = new Matrix4();
     private final Matrix4 modelViewProjectionMatrix = new Matrix4();
+    private final BoundingBox chunkBounds = new BoundingBox();
+    private int lastCulledChunks;
     private SpriteBatch batch;
     private BitmapFont font;
     private ShaderProgram shaderProgram;
@@ -67,7 +70,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
         world = new AbyssWorld(WORLD_SEED);
         world.init();
-        world.loadChunksAround((int) START_POSITION.x, (int) START_POSITION.y, (int) START_POSITION.z, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
+        world.getChunkLoader().loadChunksAround((int) START_POSITION.x, (int) START_POSITION.y, (int) START_POSITION.z, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
 
         startupInfo = String.format(
                 "3D first-person debug viewer | Seed: %d | Start: (%.0f, %.0f, %.0f)",
@@ -83,9 +86,9 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     public void render() {
         controller.update(Gdx.graphics.getDeltaTime());
         streamWorldAroundCamera();
-        world.pollCompletedChunks();
-        world.queueDirtyMeshes();
-        world.pollCompletedMeshes();
+        world.getChunkLoader().pollCompletedChunks();
+        world.getMeshCoordinator().queueDirtyMeshes();
+        world.getMeshCoordinator().pollCompletedMeshes();
         updateDebugInfo();
 
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
@@ -135,6 +138,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private void renderWorld() {
         shaderProgram.bind();
+        int culled = 0;
 
         // --- Opaque pass ---
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
@@ -142,6 +146,10 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glDisable(GL20.GL_BLEND);
         for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
             VoxelChunk chunk = loadedChunk.chunk();
+            if (!isChunkVisible(chunk)) {
+                culled++;
+                continue;
+            }
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
             modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
             shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
@@ -156,6 +164,9 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glDepthMask(false);
         for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
             VoxelChunk chunk = loadedChunk.chunk();
+            if (!isChunkVisible(chunk)) {
+                continue;
+            }
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
             modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
             shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
@@ -165,6 +176,24 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         }
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
+
+        lastCulledChunks = culled;
+    }
+
+    /**
+     * Returns {@code true} if the chunk's axis-aligned bounding box intersects
+     * the camera's view frustum. Chunks outside the frustum are skipped entirely.
+     */
+    private boolean isChunkVisible(VoxelChunk chunk) {
+        float wx = chunk.getWorldX();
+        float wy = chunk.getWorldY();
+        float wz = chunk.getWorldZ();
+        float size = VoxelChunk.SIZE;
+        chunkBounds.set(
+                new Vector3(wx, wy, wz),
+                new Vector3(wx + size, wy + size, wz + size)
+        );
+        return camera.frustum.boundsInFrustum(chunkBounds);
     }
 
     private void renderMesh(Mesh mesh) {
@@ -196,7 +225,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private void updateDebugInfo() {
         debugInfo = String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\n%s\nFPS: %d",
                 startupInfo,
                 camera.position.x,
                 camera.position.y,
@@ -207,6 +236,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 world.getChunkManager().getLoadedCount(),
                 world.getChunkManager().getPendingCount(),
                 world.getChunkManager().getPendingMeshCount(),
+                lastCulledChunks,
                 FirstPersonDebugController.getControlSummary(),
                 Gdx.graphics.getFramesPerSecond()
         );
