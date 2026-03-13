@@ -36,16 +36,16 @@ public class CollapseSimulator {
     public void onVoxelRemoved(int x, int y, int z) {
         // Walk upward from the removed voxel
         for (int checkY = y + 1; checkY <= y + MAX_FALL_DISTANCE; checkY++) {
-            VoxelType above = world.getVoxelAt(x, checkY, z);
-            if (!above.isSolid()) break; // gap reached, nothing more to fall
+            VoxelType above = world.getVoxelAccess().getVoxelAt(x, checkY, z);
+            if (!above.isSolid()) { break; } // gap reached, nothing more to fall
 
-            // This solid voxel has lost its support – find where it lands
+            // This solid voxel has lost its support - find where it lands
             int landY = findLandingY(x, y, z, checkY);
-            if (landY == checkY) continue; // already supported
+            if (landY == checkY) { continue; } // already supported
 
             // Move the voxel down
-            world.setVoxelAt(x, checkY, z, VoxelType.AIR);
-            world.setVoxelAt(x, landY, z, above);
+            world.getVoxelAccess().setVoxelAt(x, checkY, z, VoxelType.AIR);
+            world.getVoxelAccess().setVoxelAt(x, landY, z, above);
         }
     }
 
@@ -57,12 +57,12 @@ public class CollapseSimulator {
      */
     private int findLandingY(int x, int removedY, int z, int fromY) {
         for (int scanY = fromY - 1; scanY >= removedY - MAX_FALL_DISTANCE; scanY--) {
-            VoxelType below = world.getVoxelAt(x, scanY, z);
+            VoxelType below = world.getVoxelAccess().getVoxelAt(x, scanY, z);
             if (below.isSolid()) {
                 return scanY + 1; // land on top of the solid voxel
             }
         }
-        // Fell all the way down – place at the bottom of the scan range
+        // Fell all the way down - place at the bottom of the scan range
         return fromY - MAX_FALL_DISTANCE;
     }
 }

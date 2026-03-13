@@ -34,14 +34,14 @@ public class ChunkStreamingWorldGenSampler implements WorldGenDataSampler {
                                 int worldZ,
                                 WorldGenColorResolver colorResolver,
                                 Color outColor) {
-        float density = world.tryGetDensityAt(worldX, worldY, worldZ);
+        float density = world.getVoxelAccess().tryGetDensityAt(worldX, worldY, worldZ);
         if (Float.isNaN(density)) {
             // Chunk not yet loaded — write a dim placeholder and signal a miss.
             outColor.set(0.04f, 0.04f, 0.06f, 1f);
             return false;
         }
 
-        VoxelType voxelType = world.tryGetVoxelAt(worldX, worldY, worldZ);
+        VoxelType voxelType = world.getVoxelAccess().tryGetVoxelAt(worldX, worldY, worldZ);
         if (voxelType == null) {
             outColor.set(0.04f, 0.04f, 0.06f, 1f);
             return false;

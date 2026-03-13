@@ -41,12 +41,12 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
     @Override
     protected void onCreate() {
         long startMs = System.currentTimeMillis();
-        world.loadChunksAround(0, 0, 0, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
+        world.getChunkLoader().loadChunksAround(0, 0, 0, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
         long initialLoadElapsedMs = System.currentTimeMillis() - startMs;
 
-        VoxelType atOrigin = world.getVoxelAt(0, 0, 0);
-        VoxelType atShaftEdge = world.getVoxelAt(100, 0, 0);
-        VoxelType atDeep = world.getVoxelAt(0, -2000, 0);
+        VoxelType atOrigin = world.getVoxelAccess().getVoxelAt(0, 0, 0);
+        VoxelType atShaftEdge = world.getVoxelAccess().getVoxelAt(100, 0, 0);
+        VoxelType atDeep = world.getVoxelAccess().getVoxelAt(0, -2000, 0);
 
         startupInfo = String.format(
                 "Chunk-streaming debug viewer | Seed: %d | Initial chunks loaded: %d | Initial load time: %d ms\n" +
@@ -64,19 +64,19 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
 
     @Override
     protected void onBeforeRender() {
-        world.pollCompletedChunks();
+        world.getChunkLoader().pollCompletedChunks();
     }
 
     @Override
     protected void onViewChanged(DebugSliceViewerController.InputResult result) {
-        world.loadChunksAroundAsync(0, getSliceRenderer().getCenterWorldY(), getSliceRenderer().getSliceWorldZ(), INITIAL_HORIZONTAL_RADIUS + 1, INITIAL_VERTICAL_RADIUS + 2);
+        world.getChunkLoader().loadChunksAroundAsync(0, getSliceRenderer().getCenterWorldY(), getSliceRenderer().getSliceWorldZ(), INITIAL_HORIZONTAL_RADIUS + 1, INITIAL_VERTICAL_RADIUS + 2);
     }
 
     @Override
     protected String buildDebugInfo() {
         int pendingMeshCount = world.getChunkManager().getPendingMeshCount();
-        int opaqueMeshCount = count(world.getOpaqueMeshes());
-        int transparentMeshCount = count(world.getTransparentMeshes());
+        int opaqueMeshCount = count(world.getMeshCoordinator().getOpaqueMeshes());
+        int transparentMeshCount = count(world.getMeshCoordinator().getTransparentMeshes());
 
         return String.format(
                 "%s\n" +

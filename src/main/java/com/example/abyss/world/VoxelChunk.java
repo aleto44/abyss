@@ -1,5 +1,6 @@
 package com.example.abyss.world;
 
+import com.example.abyss.WorldConstants;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
 
@@ -9,7 +10,7 @@ import com.example.abyss.world.voxel.VoxelType;
  */
 public class VoxelChunk {
 
-    public static final int SIZE = VoxelData.SIZE; // 32
+    public static final int SIZE = WorldConstants.CHUNK_SIZE;
 
     private final int cx, cy, cz;
     private final VoxelData data;

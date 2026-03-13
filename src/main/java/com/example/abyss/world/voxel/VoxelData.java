@@ -1,5 +1,7 @@
 package com.example.abyss.world.voxel;
 
+import com.example.abyss.WorldConstants;
+
 /**
  * Holds the raw data for a single 32×32×32 chunk:
  * <ul>
@@ -10,7 +12,7 @@ package com.example.abyss.world.voxel;
  */
 public class VoxelData {
 
-    public static final int SIZE = 32;
+    public static final int SIZE = WorldConstants.CHUNK_SIZE;
     private static final int VOLUME = SIZE * SIZE * SIZE; // 32768
 
     private final float[] densityField;

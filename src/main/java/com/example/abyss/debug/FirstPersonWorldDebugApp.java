@@ -129,8 +129,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         int worldX = Math.round(camera.position.x);
         int worldY = Math.round(camera.position.y);
         int worldZ = Math.round(camera.position.z);
-        world.loadChunksAroundAsync(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
-        world.unloadDistantChunks(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS + 1, STREAM_VERTICAL_RADIUS + 1);
+        world.getChunkLoader().loadChunksAroundAsync(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
+        world.getChunkLoader().unloadDistantChunks(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS + 1, STREAM_VERTICAL_RADIUS + 1);
     }
 
     private void renderWorld() {
@@ -140,7 +140,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
-        for (LoadedChunk loadedChunk : world.getRenderableChunks()) {
+        for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
             VoxelChunk chunk = loadedChunk.chunk();
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
             modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
@@ -154,7 +154,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         Gdx.gl.glDepthMask(false);
-        for (LoadedChunk loadedChunk : world.getRenderableChunks()) {
+        for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
             VoxelChunk chunk = loadedChunk.chunk();
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
             modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
