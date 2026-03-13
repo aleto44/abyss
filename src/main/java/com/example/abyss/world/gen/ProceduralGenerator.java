@@ -41,6 +41,13 @@ public class ProceduralGenerator {
     private static final int OCEANIA_WATERLINE_Y = -4600;
 
     /**
+     * Waterline Y for the surface ocean that fills the outer perimeter beyond the abyss
+     * boundary. Voxels in the SURFACE layer that are outside the boundary and below this Y
+     * become WATER, creating a surrounding ocean on the side of the world away from the abyss.
+     */
+    private static final int SURFACE_SEA_LEVEL_Y = 48;
+
+    /**
      * Nominal radius of the abyss in voxels (soft horizontal boundary).
      * Terrain density increases sharply beyond this distance from center,
      * forming impassable walls.  ~5 km radius at the top.
@@ -264,6 +271,16 @@ public class ProceduralGenerator {
         }
 
         // Air – but may be water or hazard pocket
+
+        // Surface outer ocean: beyond the boundary, fill below sea level with water
+        if (layer == Layer.SURFACE) {
+            float horizontalDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+            float boundaryPerturbation = boundaryNoise.GetNoise(wx, wy, wz) * (ABYSS_BOUNDARY_RADIUS * 0.1f);
+            float effectiveBoundary = ABYSS_BOUNDARY_RADIUS + boundaryPerturbation;
+            if (horizontalDist > effectiveBoundary && wy <= SURFACE_SEA_LEVEL_Y) {
+                return VoxelType.WATER;
+            }
+        }
 
         // Oceania waterline: static water below the line
         if (layer == Layer.OCEANIA && wy < OCEANIA_WATERLINE_Y) {

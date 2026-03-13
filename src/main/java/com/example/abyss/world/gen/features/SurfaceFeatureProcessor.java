@@ -18,18 +18,56 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
     private static final float SHRUB_THRESHOLD = 0.58f;
     private static final float TALL_GRASS_THRESHOLD = 0.30f;
-    private static final int MOUNTAIN_BASE_WORLD_Y = 32;
-    private static final int MOUNTAIN_HEIGHT_VARIATION = 180;
-    private static final int STONE_CAP_DEPTH = 5;
-    private static final int DIRT_DEPTH = 4;
+    /**
+     * Minimum height (in voxels above the surface layer floor) that every mountain
+     * column reaches.  Raising this makes the whole range feel heftier.
+     */
+    private static final int MOUNTAIN_BASE_WORLD_Y = 60;
+    /**
+     * Maximum additional height variation on top of the base.  A larger value
+     * produces taller, more dramatic peaks.
+     */
+    private static final int MOUNTAIN_HEIGHT_VARIATION = 280;
+    private static final int STONE_CAP_DEPTH = 8;
+    private static final int DIRT_DEPTH = 5;
     private static final float SHAFT_MARGIN = 18f;
 
+    /**
+     * Inner radius where the mountain ring begins (just outside the shaft opening).
+     * Should be slightly larger than the shaft radius (shaftDiameter/2 = 260).
+     */
+    private static final float MOUNTAIN_INNER_RADIUS = 280f;
+    /**
+     * Radius at which mountain height reaches its maximum.  Mountains build up
+     * from zero at {@link #MOUNTAIN_INNER_RADIUS} to full height here.
+     */
+    private static final float MOUNTAIN_PEAK_RADIUS = 450f;
+    /**
+     * Radius at which mountains have fully faded back to zero.  Everything beyond
+     * this distance is flat ocean, giving the world an island-around-an-abyss look.
+     * Must be greater than {@link #MOUNTAIN_PEAK_RADIUS}.
+     */
+    private static final float MOUNTAIN_FADE_END = 700f;
+
     private final FastNoiseLite surfaceDetailNoise;
+    /**
+     * Very-low-frequency "continent" noise that clusters peaks into broad mountain
+     * ranges rather than scattering them evenly across the surface.
+     */
+    private final FastNoiseLite continentNoise;
 
     public SurfaceFeatureProcessor(long seed) {
+        // Fine detail / ridge noise – used for vegetation placement and peak sharpening.
         surfaceDetailNoise = new FastNoiseLite((int) (seed ^ 0x53_55_52_46L)); // "SURF"
         surfaceDetailNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        surfaceDetailNoise.SetFrequency(0.07f);
+        surfaceDetailNoise.SetFrequency(0.025f); // low-frequency → wide, thick mountains
+
+        // Continental noise – groups mountains into large connected ranges.
+        continentNoise = new FastNoiseLite((int) (seed ^ 0x434F_4E54L)); // "CONT"
+        continentNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        continentNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        continentNoise.SetFractalOctaves(3);
+        continentNoise.SetFrequency(0.004f); // scaled to island ring (~700 voxel radius)
     }
 
     @Override
@@ -102,11 +140,39 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     }
 
     private int determineMountainHeight(int wx, int wz) {
-        float broadNoise = surfaceDetailNoise.GetNoise(wx * 0.45f, wz * 0.45f);
-        float ridgeNoise = surfaceDetailNoise.GetNoise(wx * 1.15f + 41.3f, wz * 1.15f - 17.8f);
-        int height = MOUNTAIN_BASE_WORLD_Y
-                + Math.round((broadNoise * 0.5f + 0.5f) * MOUNTAIN_HEIGHT_VARIATION)
-                + Math.round(ridgeNoise * 18f);
+        // --- Radial envelope ---
+        // Mountains ring the abyss shaft and must not go on forever.
+        // The envelope is 0 inside the shaft, rises to 1 at MOUNTAIN_PEAK_RADIUS,
+        // then fades smoothly back to 0 at MOUNTAIN_FADE_END.
+        float horizontalDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+        float riseT  = Math.max(0f, Math.min(1f, (horizontalDist - MOUNTAIN_INNER_RADIUS)
+                                                  / (MOUNTAIN_PEAK_RADIUS - MOUNTAIN_INNER_RADIUS)));
+        float fadeT  = Math.max(0f, Math.min(1f, (horizontalDist - MOUNTAIN_PEAK_RADIUS)
+                                                  / (MOUNTAIN_FADE_END - MOUNTAIN_PEAK_RADIUS)));
+        // Smoothstep both transitions for natural curves, then combine: rise up, then fade out.
+        float rise   = riseT * riseT * (3f - 2f * riseT);
+        float fade   = fadeT * fadeT * (3f - 2f * fadeT);
+        float radialEnvelope = rise * (1f - fade);
+
+        // Early-out: column is flat, nothing to build.
+        if (radialEnvelope <= 0f) {
+            return 0;
+        }
+
+        // --- Continental noise ---
+        // Groups peaks into large ranges with wide flat valleys between them.
+        float cont = continentNoise.GetNoise(wx, wz) * 0.5f + 0.5f; // 0..1
+        cont = cont * cont * (3f - 2f * cont); // smoothstep – sharpens range boundaries
+        cont = cont * cont;                      // extra squeeze – very wide flat valleys
+
+        // --- Shape noise ---
+        float broadNoise = surfaceDetailNoise.GetNoise(wx * 0.3f, wz * 0.3f);
+        float ridgeNoise  = surfaceDetailNoise.GetNoise(wx * 0.8f + 41.3f, wz * 0.8f - 17.8f);
+        float blendedShape = (broadNoise * 0.5f + 0.5f) * 0.7f + (ridgeNoise * 0.5f + 0.5f) * 0.3f;
+
+        // Final height = full potential × continental gate × radial envelope.
+        int height = Math.round(
+                radialEnvelope * cont * (MOUNTAIN_BASE_WORLD_Y + blendedShape * MOUNTAIN_HEIGHT_VARIATION));
         return Math.max(0, Math.min(Layer.SURFACE.getYStart() - Layer.SURFACE.getYEnd(), height));
     }
 
