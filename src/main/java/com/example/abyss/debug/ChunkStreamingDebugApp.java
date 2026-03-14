@@ -74,7 +74,7 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
 
     @Override
     protected String buildDebugInfo() {
-        int pendingMeshCount = world.getChunkManager().getPendingMeshCount();
+        int pendingMeshCount = world.getMeshCoordinator().getPendingMeshCount();
         int opaqueMeshCount = count(world.getMeshCoordinator().getOpaqueMeshes());
         int transparentMeshCount = count(world.getMeshCoordinator().getTransparentMeshes());
 
