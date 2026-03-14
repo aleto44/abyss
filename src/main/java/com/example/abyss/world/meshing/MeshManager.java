@@ -43,11 +43,14 @@ public class MeshManager {
             return false;
         }
 
-        VoxelChunk plusX = chunkLookup.apply(new ChunkKey(key.cx() + 1, key.cy(), key.cz()));
-        VoxelChunk plusY = chunkLookup.apply(new ChunkKey(key.cx(), key.cy() + 1, key.cz()));
-        VoxelChunk plusZ = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1));
+        VoxelChunk plusX  = chunkLookup.apply(new ChunkKey(key.cx() + 1, key.cy(), key.cz()));
+        VoxelChunk plusY  = chunkLookup.apply(new ChunkKey(key.cx(), key.cy() + 1, key.cz()));
+        VoxelChunk plusZ  = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1));
+        VoxelChunk minusX = chunkLookup.apply(new ChunkKey(key.cx() - 1, key.cy(), key.cz()));
+        VoxelChunk minusY = chunkLookup.apply(new ChunkKey(key.cx(), key.cy() - 1, key.cz()));
+        VoxelChunk minusZ = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1));
 
-        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, plusX, plusY, plusZ));
+        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ));
         if (submitted) {
             renderState.setMeshQueued(true);
         }

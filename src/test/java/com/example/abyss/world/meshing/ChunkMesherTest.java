@@ -17,11 +17,14 @@ class ChunkMesherTest {
     @Test
     void buildMeshReturnsEmptyForUniformAir() {
         VoxelChunk center = createChunk(0, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusX = createChunk(1, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusY = createChunk(0, 1, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusZ = createChunk(0, 0, 1, -1f, VoxelType.AIR);
+        VoxelChunk plusX  = createChunk( 1,  0,  0, -1f, VoxelType.AIR);
+        VoxelChunk plusY  = createChunk( 0,  1,  0, -1f, VoxelType.AIR);
+        VoxelChunk plusZ  = createChunk( 0,  0,  1, -1f, VoxelType.AIR);
+        VoxelChunk minusX = createChunk(-1,  0,  0, -1f, VoxelType.AIR);
+        VoxelChunk minusY = createChunk( 0, -1,  0, -1f, VoxelType.AIR);
+        VoxelChunk minusZ = createChunk( 0,  0, -1, -1f, VoxelType.AIR);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
 
         assertTrue(mesh.isEmpty());
     }
@@ -29,11 +32,14 @@ class ChunkMesherTest {
     @Test
     void buildMeshReturnsEmptyForUniformSolid() {
         VoxelChunk center = createChunk(0, 0, 0, 1f, VoxelType.STONE);
-        VoxelChunk plusX = createChunk(1, 0, 0, 1f, VoxelType.STONE);
-        VoxelChunk plusY = createChunk(0, 1, 0, 1f, VoxelType.STONE);
-        VoxelChunk plusZ = createChunk(0, 0, 1, 1f, VoxelType.STONE);
+        VoxelChunk plusX  = createChunk( 1,  0,  0, 1f, VoxelType.STONE);
+        VoxelChunk plusY  = createChunk( 0,  1,  0, 1f, VoxelType.STONE);
+        VoxelChunk plusZ  = createChunk( 0,  0,  1, 1f, VoxelType.STONE);
+        VoxelChunk minusX = createChunk(-1,  0,  0, 1f, VoxelType.STONE);
+        VoxelChunk minusY = createChunk( 0, -1,  0, 1f, VoxelType.STONE);
+        VoxelChunk minusZ = createChunk( 0,  0, -1, 1f, VoxelType.STONE);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
 
         assertTrue(mesh.isEmpty());
     }
@@ -41,11 +47,14 @@ class ChunkMesherTest {
     @Test
     void buildMeshGeneratesSurfaceForDensityPlane() {
         VoxelChunk center = createPlaneChunk(0, 0, 0, 15.5f);
-        VoxelChunk plusX = createPlaneChunk(1, 0, 0, 15.5f);
-        VoxelChunk plusY = createPlaneChunk(0, 1, 0, 15.5f);
-        VoxelChunk plusZ = createPlaneChunk(0, 0, 1, 15.5f);
+        VoxelChunk plusX  = createPlaneChunk( 1,  0,  0, 15.5f);
+        VoxelChunk plusY  = createPlaneChunk( 0,  1,  0, 15.5f);
+        VoxelChunk plusZ  = createPlaneChunk( 0,  0,  1, 15.5f);
+        VoxelChunk minusX = createPlaneChunk(-1,  0,  0, 15.5f);
+        VoxelChunk minusY = createPlaneChunk( 0, -1,  0, 15.5f);
+        VoxelChunk minusZ = createPlaneChunk( 0,  0, -1, 15.5f);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
 
         assertFalse(mesh.isEmpty());
         assertTrue(mesh.opaqueIndexCount() > 0);
@@ -56,9 +65,12 @@ class ChunkMesherTest {
     @Test
     void buildMeshRoutesTransparentSolidTypesSeparately() {
         VoxelChunk center = createChunk(0, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusX = createChunk(1, 0, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusY = createChunk(0, 1, 0, -1f, VoxelType.AIR);
-        VoxelChunk plusZ = createChunk(0, 0, 1, -1f, VoxelType.AIR);
+        VoxelChunk plusX  = createChunk( 1,  0,  0, -1f, VoxelType.AIR);
+        VoxelChunk plusY  = createChunk( 0,  1,  0, -1f, VoxelType.AIR);
+        VoxelChunk plusZ  = createChunk( 0,  0,  1, -1f, VoxelType.AIR);
+        VoxelChunk minusX = createChunk(-1,  0,  0, -1f, VoxelType.AIR);
+        VoxelChunk minusY = createChunk( 0, -1,  0, -1f, VoxelType.AIR);
+        VoxelChunk minusZ = createChunk( 0,  0, -1, -1f, VoxelType.AIR);
 
         for (int x = 8; x <= 14; x++) {
             for (int y = 8; y <= 14; y++) {
@@ -73,7 +85,7 @@ class ChunkMesherTest {
             }
         }
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
 
         assertEquals(0, mesh.opaqueIndexCount());
         assertTrue(mesh.transparentIndexCount() > 0);

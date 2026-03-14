@@ -58,7 +58,10 @@ public final class ChunkMesher {
     public static MeshData buildMesh(VoxelChunk center,
                                      VoxelChunk plusX,
                                      VoxelChunk plusY,
-                                     VoxelChunk plusZ) {
+                                     VoxelChunk plusZ,
+                                     VoxelChunk minusX,
+                                     VoxelChunk minusY,
+                                     VoxelChunk minusZ) {
         SectionCollector opaqueSections = new SectionCollector();
         SectionCollector transparentSections = new SectionCollector();
 
@@ -66,10 +69,13 @@ public final class ChunkMesher {
             for (int y = 0; y < SIZE; y++) {
                 for (int z = 0; z < SIZE; z++) {
                     VoxelType type = center.getVoxel(x, y, z);
-                    if (type == null || !type.isSolid()) {
+                    // Skip air and other non-solid, non-transparent voxels that have no geometry.
+                    if (type == null || (!type.isSolid() && !type.isTransparent())) {
                         continue;
                     }
-                    emitExposedFaces(x, y, z, type, center, plusX, plusY, plusZ,
+                    emitExposedFaces(x, y, z, type, center,
+                            plusX, plusY, plusZ,
+                            minusX, minusY, minusZ,
                             opaqueSections, transparentSections);
                 }
             }
@@ -88,6 +94,9 @@ public final class ChunkMesher {
                                          VoxelChunk plusX,
                                          VoxelChunk plusY,
                                          VoxelChunk plusZ,
+                                         VoxelChunk minusX,
+                                         VoxelChunk minusY,
+                                         VoxelChunk minusZ,
                                          SectionCollector opaqueSections,
                                          SectionCollector transparentSections) {
         SectionCollector sections = type.isTransparent() ? transparentSections : opaqueSections;
@@ -98,7 +107,9 @@ public final class ChunkMesher {
             int ny = y + normal[1];
             int nz = z + normal[2];
 
-            VoxelType neighbour = sampleNeighbour(nx, ny, nz, center, plusX, plusY, plusZ);
+            VoxelType neighbour = sampleNeighbour(nx, ny, nz, center,
+                    plusX, plusY, plusZ,
+                    minusX, minusY, minusZ);
 
             // Cull face if neighbour is solid and opaque.
             if (neighbour != null && neighbour.isSolid() && !neighbour.isTransparent()) {
@@ -119,18 +130,26 @@ public final class ChunkMesher {
     }
 
     /**
-     * Samples a voxel type at local chunk coordinates that may spill into a
-     * neighbouring chunk on the +X, +Y, or +Z axis.
+     * Samples a voxel type at local chunk coordinates that may spill into any
+     * of the six axis-aligned neighbouring chunks. Returns {@code null} when
+     * the relevant neighbour chunk is not loaded (treat as air/unculled).
      */
     private static VoxelType sampleNeighbour(int x, int y, int z,
                                              VoxelChunk center,
                                              VoxelChunk plusX,
                                              VoxelChunk plusY,
-                                             VoxelChunk plusZ) {
-        if (x < 0 || y < 0 || z < 0) {
-            // Negative-direction neighbours are not provided — treat as solid
-            // to avoid generating faces on those edges.
-            return VoxelType.STONE;
+                                             VoxelChunk plusZ,
+                                             VoxelChunk minusX,
+                                             VoxelChunk minusY,
+                                             VoxelChunk minusZ) {
+        if (x < 0) {
+            return (minusX != null) ? minusX.getVoxel(SIZE - 1, y, z) : null;
+        }
+        if (y < 0) {
+            return (minusY != null) ? minusY.getVoxel(x, SIZE - 1, z) : null;
+        }
+        if (z < 0) {
+            return (minusZ != null) ? minusZ.getVoxel(x, y, SIZE - 1) : null;
         }
         if (x >= SIZE) {
             return (plusX != null) ? plusX.getVoxel(0, y, z) : null;
@@ -187,7 +206,10 @@ public final class ChunkMesher {
                                                Function<ChunkKey, VoxelChunk> chunkLookup) {
         return chunkLookup.apply(new ChunkKey(key.cx() + 1, key.cy(), key.cz())) != null
                 && chunkLookup.apply(new ChunkKey(key.cx(), key.cy() + 1, key.cz())) != null
-                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1)) != null;
+                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1)) != null
+                && chunkLookup.apply(new ChunkKey(key.cx() - 1, key.cy(), key.cz())) != null
+                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy() - 1, key.cz())) != null
+                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1)) != null;
     }
 
     // -------------------------------------------------------------------------
