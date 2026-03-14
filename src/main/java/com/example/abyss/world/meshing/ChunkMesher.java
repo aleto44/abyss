@@ -64,19 +64,16 @@ public final class ChunkMesher {
                                      VoxelChunk minusZ) {
         SectionCollector opaqueSections = new SectionCollector();
         SectionCollector transparentSections = new SectionCollector();
+        NeighbourSampler neighbours = new NeighbourSampler(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
 
         for (int x = 0; x < SIZE; x++) {
             for (int y = 0; y < SIZE; y++) {
                 for (int z = 0; z < SIZE; z++) {
                     VoxelType type = center.getVoxel(x, y, z);
-                    // Skip air and other non-solid, non-transparent voxels that have no geometry.
-                    if (type == null || (!type.isSolid() && !type.isTransparent())) {
-                        continue;
+                    boolean hasGeometry = type != null && (type.isSolid() || type.isTransparent());
+                    if (hasGeometry) {
+                        emitExposedFaces(x, y, z, type, neighbours, opaqueSections, transparentSections);
                     }
-                    emitExposedFaces(x, y, z, type, center,
-                            plusX, plusY, plusZ,
-                            minusX, minusY, minusZ,
-                            opaqueSections, transparentSections);
                 }
             }
         }
@@ -90,77 +87,41 @@ public final class ChunkMesher {
 
     private static void emitExposedFaces(int x, int y, int z,
                                          VoxelType type,
-                                         VoxelChunk center,
-                                         VoxelChunk plusX,
-                                         VoxelChunk plusY,
-                                         VoxelChunk plusZ,
-                                         VoxelChunk minusX,
-                                         VoxelChunk minusY,
-                                         VoxelChunk minusZ,
+                                         NeighbourSampler neighbours,
                                          SectionCollector opaqueSections,
                                          SectionCollector transparentSections) {
         SectionCollector sections = type.isTransparent() ? transparentSections : opaqueSections;
 
         for (int face = 0; face < FACE_NORMALS.length; face++) {
             int[] normal = FACE_NORMALS[face];
-            int nx = x + normal[0];
-            int ny = y + normal[1];
-            int nz = z + normal[2];
+            VoxelType neighbour = neighbours.sample(x + normal[0], y + normal[1], z + normal[2]);
 
-            VoxelType neighbour = sampleNeighbour(nx, ny, nz, center,
-                    plusX, plusY, plusZ,
-                    minusX, minusY, minusZ);
-
-            // Cull face if neighbour is solid and opaque.
-            if (neighbour != null && neighbour.isSolid() && !neighbour.isTransparent()) {
-                continue;
+            if (isFaceVisible(type, neighbour)) {
+                emitQuad(x, y, z, face, type, sections);
             }
-            // Cull face between two voxels of the same transparent type (e.g. water-water interior).
-            if (neighbour == type && type.isTransparent()) {
-                continue;
-            }
-            // Cull face if current voxel is non-solid (e.g. water) and neighbour is solid —
-            // the solid surface already covers this boundary.
-            if (!type.isSolid() && neighbour != null && neighbour.isSolid()) {
-                continue;
-            }
-
-            emitQuad(x, y, z, face, type, sections);
         }
     }
 
     /**
-     * Samples a voxel type at local chunk coordinates that may spill into any
-     * of the six axis-aligned neighbouring chunks. Returns {@code null} when
-     * the relevant neighbour chunk is not loaded (treat as air/unculled).
+     * Returns true if a face between {@code type} and its {@code neighbour} should be emitted.
+     * A face is visible when the neighbour does not fully occlude it:
+     * <ul>
+     *   <li>Solid opaque neighbours always occlude — no face needed.</li>
+     *   <li>A transparent voxel facing the same transparent type is an interior — no face needed.</li>
+     *   <li>A non-solid voxel (e.g. water) facing any solid neighbour is covered — no face needed.</li>
+     * </ul>
      */
-    private static VoxelType sampleNeighbour(int x, int y, int z,
-                                             VoxelChunk center,
-                                             VoxelChunk plusX,
-                                             VoxelChunk plusY,
-                                             VoxelChunk plusZ,
-                                             VoxelChunk minusX,
-                                             VoxelChunk minusY,
-                                             VoxelChunk minusZ) {
-        if (x < 0) {
-            return (minusX != null) ? minusX.getVoxel(SIZE - 1, y, z) : null;
+    private static boolean isFaceVisible(VoxelType type, VoxelType neighbour) {
+        if (neighbour != null && neighbour.isSolid() && !neighbour.isTransparent()) {
+            return false;
         }
-        if (y < 0) {
-            return (minusY != null) ? minusY.getVoxel(x, SIZE - 1, z) : null;
+        if (type.isTransparent() && neighbour == type) {
+            return false;
         }
-        if (z < 0) {
-            return (minusZ != null) ? minusZ.getVoxel(x, y, SIZE - 1) : null;
+        if (!type.isSolid() && neighbour != null && neighbour.isSolid()) {
+            return false;
         }
-        if (x >= SIZE) {
-            return (plusX != null) ? plusX.getVoxel(0, y, z) : null;
-        }
-        if (y >= SIZE) {
-            return (plusY != null) ? plusY.getVoxel(x, 0, z) : null;
-        }
-        if (z >= SIZE) {
-            return (plusZ != null) ? plusZ.getVoxel(x, y, 0) : null;
-        }
-        return center.getVoxel(x, y, z);
+        return true;
     }
 
     /** Emits two triangles forming a quad for the given face of voxel (x, y, z). */
@@ -215,6 +176,48 @@ public final class ChunkMesher {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Holds references to all six axis-aligned neighbours of a chunk and
+     * exposes a single {@link #sample} method for out-of-bounds coordinate
+     * lookups during meshing.
+     */
+    private static final class NeighbourSampler {
+        private final VoxelChunk center;
+        private final VoxelChunk plusX;
+        private final VoxelChunk plusY;
+        private final VoxelChunk plusZ;
+        private final VoxelChunk minusX;
+        private final VoxelChunk minusY;
+        private final VoxelChunk minusZ;
+
+        NeighbourSampler(VoxelChunk center,
+                         VoxelChunk plusX, VoxelChunk plusY, VoxelChunk plusZ,
+                         VoxelChunk minusX, VoxelChunk minusY, VoxelChunk minusZ) {
+            this.center = center;
+            this.plusX  = plusX;
+            this.plusY  = plusY;
+            this.plusZ  = plusZ;
+            this.minusX = minusX;
+            this.minusY = minusY;
+            this.minusZ = minusZ;
+        }
+
+        /**
+         * Samples a voxel type at local chunk coordinates that may spill into any
+         * of the six axis-aligned neighbouring chunks. Returns {@code null} when
+         * the relevant neighbour chunk is not loaded (treat as air/unculled).
+         */
+        VoxelType sample(int x, int y, int z) {
+            if (x < 0)      { return (minusX != null) ? minusX.getVoxel(SIZE - 1, y, z) : null; }
+            if (y < 0)      { return (minusY != null) ? minusY.getVoxel(x, SIZE - 1, z) : null; }
+            if (z < 0)      { return (minusZ != null) ? minusZ.getVoxel(x, y, SIZE - 1) : null; }
+            if (x >= SIZE)  { return (plusX  != null) ? plusX.getVoxel(0, y, z)          : null; }
+            if (y >= SIZE)  { return (plusY  != null) ? plusY.getVoxel(x, 0, z)          : null; }
+            if (z >= SIZE)  { return (plusZ  != null) ? plusZ.getVoxel(x, y, 0)          : null; }
+            return center.getVoxel(x, y, z);
+        }
+    }
 
     private static final class SectionCollector {
         private static final int QUAD_VERTEX_COUNT = 4;
