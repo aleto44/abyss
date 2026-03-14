@@ -249,6 +249,11 @@ public class KeyedTaskQueue<K, V> {
         return knownKeys.contains(key);
     }
 
+    /** Returns a snapshot of all keys currently in flight (submitted but not yet drained). */
+    public Set<K> getPendingKeys() {
+        return Set.copyOf(pending.keySet());
+    }
+
     // ----------------------------------------------------------------
     // Lifecycle
     // ----------------------------------------------------------------

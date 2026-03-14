@@ -10,6 +10,7 @@ import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.VoxelChunk;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.function.Function;
 
@@ -17,6 +18,14 @@ import java.util.function.Function;
  * Coordinates async chunk meshing and main-thread LibGDX Mesh promotion.
  */
 public class MeshManager {
+
+    /**
+     * Maximum number of chunk meshes that will be uploaded to the GPU in a single
+     * frame. Capping this prevents the main thread from stalling on
+     * {@code BufferUtils.copyJni} when many chunks complete simultaneously (e.g.
+     * when descending rapidly through the world).
+     */
+    private static final int MAX_PROMOTIONS_PER_FRAME = 4;
 
     private final KeyedTaskQueue<ChunkKey, MeshData> taskQueue;
 
@@ -57,7 +66,40 @@ public class MeshManager {
         return submitted;
     }
 
-    public void pollCompleted(Function<ChunkKey, LoadedChunk> loadedChunkLookup) {
+    /**
+     * Drains completed mesh results on the main thread, capped at
+     * {@link #MAX_PROMOTIONS_PER_FRAME} GPU uploads per frame to prevent
+     * {@code BufferUtils.copyJni} stalls when many chunks finish simultaneously.
+     * <p>
+     * Deferred chunks (those whose {@link MeshData} was stored in a prior frame
+     * but not yet promoted) are drained first. Newly completed results that
+     * exceed the budget have their {@link MeshData} stored as pending so they
+     * are picked up in a future frame.
+     * </p>
+     *
+     * @param loadedChunkLookup function to resolve a {@link LoadedChunk} by key
+     * @param allLoadedChunks   all currently-loaded chunks, used to drain deferred promotions
+     */
+    public void pollCompleted(Function<ChunkKey, LoadedChunk> loadedChunkLookup,
+                              Collection<LoadedChunk> allLoadedChunks) {
+        int promotionsRemaining = MAX_PROMOTIONS_PER_FRAME;
+
+        // First, drain any MeshData that was deferred from a prior frame.
+        for (LoadedChunk loadedChunk : allLoadedChunks) {
+            boolean budgetExhausted = promotionsRemaining <= 0;
+            if (budgetExhausted) {
+                break;
+            }
+            ChunkMeshState renderState = loadedChunk.renderState();
+            boolean hasDeferredData = renderState.getPendingMeshData() != null && !renderState.isMeshQueued();
+            if (hasDeferredData) {
+                promotePendingMesh(renderState);
+                renderState.setMeshDirty(false);
+                promotionsRemaining--;
+            }
+        }
+
+        // Then collect newly completed results from the background queue.
         List<KeyedTaskQueue.Result<ChunkKey, MeshData>> results = taskQueue.pollCompleted();
         for (KeyedTaskQueue.Result<ChunkKey, MeshData> result : results) {
             LoadedChunk loadedChunk = loadedChunkLookup.apply(result.key());
@@ -68,8 +110,15 @@ public class MeshManager {
             ChunkMeshState renderState = loadedChunk.renderState();
             renderState.setMeshQueued(false);
             renderState.setPendingMeshData(result.value());
-            promotePendingMesh(renderState);
-            renderState.setMeshDirty(false);
+
+            boolean withinBudget = promotionsRemaining > 0;
+            if (withinBudget) {
+                promotePendingMesh(renderState);
+                renderState.setMeshDirty(false);
+                promotionsRemaining--;
+            }
+            // If budget is exhausted, pendingMeshData remains set and will be
+            // promoted in a subsequent frame by the deferred-drain pass above.
         }
     }
 

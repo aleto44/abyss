@@ -155,7 +155,7 @@ public class ChunkManager {
     }
 
     public void pollCompletedMeshes() {
-        meshManager.pollCompleted(this::getLoadedChunk);
+        meshManager.pollCompleted(this::getLoadedChunk, loaded.values());
     }
 
     public void markChunkMeshDirty(ChunkKey key) {
@@ -182,6 +182,28 @@ public class ChunkManager {
         if (loadedChunk != null) {
             meshManager.disposeChunkMeshes(loadedChunk.renderState());
         }
+    }
+
+    /**
+     * Cancels a pending (not-yet-loaded) generation task for the given chunk.
+     * Has no effect if the chunk is already loaded or not in the queue.
+     */
+    public void cancelPendingChunk(int cx, int cy, int cz) {
+        ChunkKey key = new ChunkKey(cx, cy, cz);
+        boolean isLoaded = loaded.containsKey(key);
+        if (!isLoaded) {
+            taskQueue.forget(key);
+        }
+    }
+
+    /**
+     * Returns all chunk keys that are currently pending generation (submitted
+     * but not yet drained into the loaded map).
+     */
+    public Collection<ChunkKey> getPendingChunkKeys() {
+        List<ChunkKey> keys = new ArrayList<>();
+        keys.addAll(taskQueue.getPendingKeys());
+        return keys;
     }
 
     // ----------------------------------------------------------------
