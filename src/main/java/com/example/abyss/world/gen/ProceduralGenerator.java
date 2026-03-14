@@ -84,7 +84,7 @@ public class ProceduralGenerator {
         hazardNoise = buildNoise((int) (seed ^ 0xCAFE_BABEL),
                 FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.03f);
         caveNoise = buildNoise((int) (seed ^ 0xF00D_BA11L),
-                FastNoiseLite.NoiseType.OpenSimplex2, FastNoiseLite.FractalType.Ridged, 3, 0.02f);
+                FastNoiseLite.NoiseType.OpenSimplex2, FastNoiseLite.FractalType.Ridged, 2, 0.006f);
         boundaryNoise = buildNoise((int) (seed ^ 0xABCD_1234L),
                 FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.003f);
 

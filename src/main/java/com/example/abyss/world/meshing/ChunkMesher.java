@@ -104,11 +104,11 @@ public final class ChunkMesher {
 
     /**
      * Returns true if a face between {@code type} and its {@code neighbour} should be emitted.
-     * A face is visible when the neighbour does not fully occlude it:
+     * A face is visible when the neighbour does not fully hide it:
      * <ul>
-     *   <li>Solid opaque neighbours always occlude — no face needed.</li>
+     *   <li>Solid opaque neighbours always hide the face — no face needed.</li>
      *   <li>A transparent voxel facing the same transparent type is an interior — no face needed.</li>
-     *   <li>A non-solid voxel (e.g. water) facing any solid neighbour is covered — no face needed.</li>
+     *   <li>A non-solid voxel (e.g. water) facing any solid neighbour is hidden — no face needed.</li>
      * </ul>
      */
     private static boolean isFaceVisible(VoxelType type, VoxelType neighbour) {

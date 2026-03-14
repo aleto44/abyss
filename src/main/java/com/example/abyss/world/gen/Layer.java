@@ -39,8 +39,8 @@ public enum Layer {
 
     FOREST_DEPTHS(-500, -1500,
             new LayerConfig(
-                    0.05f,   // lower threshold – denser terrain
-                    0.018f,  // higher frequency – finer detail for trees/caves
+                    0.28f,   // raised threshold – dense solid terrain with cave corridors
+                    0.009f,  // lower frequency – wide cave-friendly formations
                     0.7f,
                     180f,
                     new VoxelType[]{VoxelType.WOOD, VoxelType.VINE, VoxelType.DIRT, VoxelType.STONE},
@@ -51,9 +51,9 @@ public enum Layer {
 
     HANGING_GARDENS(-1500, -2500,
             new LayerConfig(
-                    0.30f,   // high threshold – lots of air, floating islands
-                    0.015f,
-                    0.9f,    // high amplitude – dramatic formations
+                    0.20f,   // moderate threshold – floating shelves with traversable gaps
+                    0.010f,  // lower frequency – large platform-scale formations
+                    0.75f,   // amplitude – dramatic but not fully disconnected
                     250f,    // wider shaft through floating islands
                     new VoxelType[]{VoxelType.STONE, VoxelType.VINE, VoxelType.GRASS},
                     null,
@@ -99,8 +99,8 @@ public enum Layer {
 
     DEEP_EXTREMES(-5500, -7000,
             new LayerConfig(
-                    0.15f,
-                    0.020f,
+                    0.32f,   // raised threshold – solid dangerous terrain with cave corridors
+                    0.008f,  // lower frequency – large chaotic passages
                     0.85f,   // high amplitude – chaotic terrain
                     150f,    // narrow, dangerous shaft
                     new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL, VoxelType.STONE},

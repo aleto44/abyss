@@ -28,8 +28,6 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * produces taller, more dramatic peaks.
      */
     private static final int MOUNTAIN_HEIGHT_VARIATION = 280;
-    private static final int STONE_CAP_DEPTH = 8;
-    private static final int DIRT_DEPTH = 5;
     private static final float SHAFT_MARGIN = 18f;
 
     /**
@@ -49,25 +47,40 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      */
     private static final float MOUNTAIN_FADE_END = 700f;
 
+    /**
+     * Noise threshold above which a column is considered a plateau ledge.
+     * Lower values = more frequent plateaus; keep this high to keep them infrequent.
+     */
+    private static final float PLATEAU_THRESHOLD = 0.62f;
+
     private final FastNoiseLite surfaceDetailNoise;
     /**
      * Very-low-frequency "continent" noise that clusters peaks into broad mountain
      * ranges rather than scattering them evenly across the surface.
      */
     private final FastNoiseLite continentNoise;
+    /**
+     * Low-frequency noise used exclusively to select infrequent plateau ledge columns.
+     * Fixed seed so plateau positions are the same every playthrough.
+     */
+    private final FastNoiseLite plateauNoise;
 
     public SurfaceFeatureProcessor(long seed) {
-        // Fine detail / ridge noise – used for vegetation placement and peak sharpening.
-        surfaceDetailNoise = new FastNoiseLite((int) (seed ^ 0x53_55_52_46L)); // "SURF"
+        // Fixed seeds: the surface is a shared, static world location (future town hub),
+        // so the mountain layout must be identical for every player regardless of world seed.
+        surfaceDetailNoise = new FastNoiseLite(0x53_55_52_46); // "SURF" – always the same
         surfaceDetailNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        surfaceDetailNoise.SetFrequency(0.025f); // low-frequency → wide, thick mountains
+        surfaceDetailNoise.SetFrequency(0.025f);
 
-        // Continental noise – groups mountains into large connected ranges.
-        continentNoise = new FastNoiseLite((int) (seed ^ 0x434F_4E54L)); // "CONT"
+        continentNoise = new FastNoiseLite(0x434F_4E54); // "CONT" – always the same
         continentNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         continentNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
         continentNoise.SetFractalOctaves(3);
-        continentNoise.SetFrequency(0.004f); // scaled to island ring (~700 voxel radius)
+        continentNoise.SetFrequency(0.004f);
+
+        plateauNoise = new FastNoiseLite(0x504C_4154); // "PLAT" – always the same
+        plateauNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        plateauNoise.SetFrequency(0.008f); // broad blobs → wide, infrequent ledges
     }
 
     @Override
@@ -76,22 +89,26 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
         shapeSurfaceChunk(data, worldBaseX, worldBaseY, worldBaseZ);
 
+        // Vegetation pass — only runs on plateau dirt tops, not bare stone.
         for (int lz = 0; lz < size; lz++) {
             int wz = worldBaseZ + lz;
             for (int lx = 0; lx < size; lx++) {
                 int wx = worldBaseX + lx;
                 float noiseSample = surfaceDetailNoise.GetNoise(wx, wz);
-                if (noiseSample < TALL_GRASS_THRESHOLD) {
+                boolean aboveGrassThreshold = noiseSample >= TALL_GRASS_THRESHOLD;
+                if (!aboveGrassThreshold) {
                     continue;
                 }
 
                 int groundY = findTopSolidVoxel(data, lx, lz);
-                if (groundY < 0 || groundY + 1 >= size) {
+                boolean hasValidGround = groundY >= 0 && groundY + 1 < size;
+                if (!hasValidGround) {
                     continue;
                 }
 
                 VoxelType groundType = data.getType(lx, groundY, lz);
-                if (groundType != VoxelType.GRASS && groundType != VoxelType.DIRT) {
+                boolean isPlateauTop = groundType == VoxelType.DIRT;
+                if (!isPlateauTop) {
                     continue;
                 }
                 if (data.getType(lx, groundY + 1, lz) != VoxelType.AIR) {
@@ -101,7 +118,9 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
                 data.setType(lx, groundY + 1, lz, VoxelType.GRASS);
                 data.setDensity(lx, groundY + 1, lz, 0.18f);
 
-                if (noiseSample >= SHRUB_THRESHOLD && groundY + 2 < size && data.getType(lx, groundY + 2, lz) == VoxelType.AIR) {
+                boolean isShrubColumn = noiseSample >= SHRUB_THRESHOLD;
+                boolean hasClearance = groundY + 2 < size && data.getType(lx, groundY + 2, lz) == VoxelType.AIR;
+                if (isShrubColumn && hasClearance) {
                     data.setType(lx, groundY + 2, lz, VoxelType.VINE);
                     data.setDensity(lx, groundY + 2, lz, 0.12f);
                 }
@@ -133,7 +152,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
                     }
                 }
                 if (!preserveShaft) {
-                    paintMountainColumn(data, lx, lz, worldBaseY, mountainTopWorldY);
+                    paintMountainColumn(data, lx, lz, worldBaseY, mountainTopWorldY, wx, wz);
                 }
             }
         }
@@ -176,7 +195,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         return Math.max(0, Math.min(Layer.SURFACE.getYStart() - Layer.SURFACE.getYEnd(), height));
     }
 
-    private void paintMountainColumn(VoxelData data, int lx, int lz, int worldBaseY, int mountainTopWorldY) {
+    private void paintMountainColumn(VoxelData data, int lx, int lz, int worldBaseY, int mountainTopWorldY, int wx, int wz) {
         int localTop = mountainTopWorldY - worldBaseY;
         if (localTop < 0) {
             return;
@@ -188,14 +207,12 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
             return;
         }
 
-        for (int ly = localBottom; ly <= clampedLocalTop; ly++) {
-            if (!data.getType(lx, ly, lz).isSolid()) {
-                data.setType(lx, ly, lz, VoxelType.STONE);
-            }
+        boolean isPlateauColumn = isPlateauLedge(wx, wz);
 
-            int depthFromTop = clampedLocalTop - ly;
-            VoxelType columnType = resolveMountainMaterial(depthFromTop, clampedLocalTop - localBottom);
-            data.setType(lx, ly, lz, columnType);
+        for (int ly = localBottom; ly <= clampedLocalTop; ly++) {
+            boolean isTopVoxel = ly == clampedLocalTop;
+            VoxelType material = resolveMountainMaterial(isTopVoxel, isPlateauColumn);
+            data.setType(lx, ly, lz, material);
             if (data.getDensity(lx, ly, lz) <= 0f) {
                 data.setDensity(lx, ly, lz, 0.35f + (clampedLocalTop - ly) * 0.04f);
             }
@@ -208,14 +225,24 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         return horizontalDistance <= shaftRadius + SHAFT_MARGIN;
     }
 
-    private static VoxelType resolveMountainMaterial(int depthFromTop, int columnHeight) {
-        if (columnHeight >= STONE_CAP_DEPTH * 3 && depthFromTop <= STONE_CAP_DEPTH) {
-            return VoxelType.STONE;
-        }
-        if (depthFromTop == 0) {
-            return VoxelType.GRASS;
-        }
-        if (depthFromTop <= DIRT_DEPTH) {
+    /**
+     * Returns true when this XZ column should be treated as a plateau ledge —
+     * meaning only the top voxel receives dirt instead of stone.
+     * Plateaus are infrequent by design (controlled by {@link #PLATEAU_THRESHOLD}).
+     */
+    private boolean isPlateauLedge(int wx, int wz) {
+        float sample = plateauNoise.GetNoise(wx, wz) * 0.5f + 0.5f; // normalise to 0..1
+        return sample >= PLATEAU_THRESHOLD;
+    }
+
+    /**
+     * Resolves the voxel material for a mountain column voxel.
+     * The entire mountain is stone except the very top voxel of a plateau column,
+     * which receives a single layer of dirt to signal a buildable ledge.
+     */
+    private static VoxelType resolveMountainMaterial(boolean isTopVoxel, boolean isPlateauColumn) {
+        boolean isPlateauSurface = isTopVoxel && isPlateauColumn;
+        if (isPlateauSurface) {
             return VoxelType.DIRT;
         }
         return VoxelType.STONE;
