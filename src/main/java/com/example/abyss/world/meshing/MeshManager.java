@@ -25,7 +25,7 @@ public class MeshManager {
      * {@code BufferUtils.copyJni} when many chunks complete simultaneously (e.g.
      * when descending rapidly through the world).
      */
-    private static final int MAX_PROMOTIONS_PER_FRAME = 4;
+    private static final int MAX_PROMOTIONS_PER_FRAME = 16;
 
     private final KeyedTaskQueue<ChunkKey, MeshData> taskQueue;
 

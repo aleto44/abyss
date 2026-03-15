@@ -1,10 +1,13 @@
 package com.example.abyss.debug;
 
-import com.badlogic.gdx.math.Frustum;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
 import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkLoader;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * Streaming policy for frustum-based chunk loading and distance-based unloading.
@@ -13,19 +16,30 @@ import com.example.abyss.world.ChunkLoader;
  * <ul>
  *   <li>Which chunks are candidates (a box around the player).</li>
  *   <li>Which candidates are visible right now (frustum AABB test).</li>
- *   <li>When to re-sweep (chunk boundary crossing or significant camera rotation).</li>
+ *   <li>When to re-sweep (chunk boundary crossing, significant camera rotation,
+ *       or continuous movement above a speed threshold).</li>
  *   <li>How often to run the unload scan (throttled by a timer).</li>
  * </ul>
+ * Candidates are submitted nearest-first so the generation thread pool always
+ * works on the chunks the player is most likely to see first.
+ * <p>
  * {@link ChunkLoader} is used as a pure executor — it is only told which
  * specific coordinates to load or unload, with no knowledge of cameras or frustums.
  * </p>
  */
 public class FrustumChunkStreamer {
 
-    /** Dot-product threshold below which a camera rotation triggers a new frustum sweep (~3.6°). */
-    private static final float DIRECTION_CHANGE_THRESHOLD = 0.998f;
+    /** Dot-product threshold below which a camera rotation triggers a new frustum sweep (~10°). */
+    private static final float DIRECTION_CHANGE_THRESHOLD = 0.985f;
     /** How often (in seconds) the unload scan runs. Avoids O(chunks) work every frame. */
     private static final float UNLOAD_INTERVAL_SECONDS = 2.0f;
+    /**
+     * Minimum world-units-per-second of camera movement that forces a re-sweep every frame.
+     * At typical move speeds (48 u/s) the player crosses chunk boundaries slowly enough that
+     * the chunk-boundary trigger alone creates 8+ second gaps in loading. Sweeping every frame
+     * while moving keeps the pipeline full.
+     */
+    private static final float MOVEMENT_SWEEP_THRESHOLD = 1.0f;
 
     private final ChunkLoader chunkLoader;
     private final int hRadius;
@@ -38,6 +52,9 @@ public class FrustumChunkStreamer {
 
     /** Camera direction from the last sweep — re-sweep triggered when rotation is significant. */
     private final Vector3 lastSweptDirection = new Vector3(Float.NaN, Float.NaN, Float.NaN);
+
+    /** Camera position from the previous frame, used to detect movement this frame. */
+    private final Vector3 lastPosition = new Vector3(Float.NaN, Float.NaN, Float.NaN);
 
     /** Scratch vectors reused each sweep to avoid per-chunk allocation during frustum tests. */
     private final Vector3 candidateMin = new Vector3();
@@ -57,11 +74,11 @@ public class FrustumChunkStreamer {
      * periodically unloads chunks that are too far away.
      */
     public void update(PerspectiveCamera camera, float deltaTime) {
-        sweepVisibleChunks(camera);
+        sweepVisibleChunks(camera, deltaTime);
         maybeUnloadDistantChunks(camera, deltaTime);
     }
 
-    private void sweepVisibleChunks(PerspectiveCamera camera) {
+    private void sweepVisibleChunks(PerspectiveCamera camera, float deltaTime) {
         int worldX = Math.round(camera.position.x);
         int worldY = Math.round(camera.position.y);
         int worldZ = Math.round(camera.position.z);
@@ -73,8 +90,9 @@ public class FrustumChunkStreamer {
         boolean playerChunkChanged = pcx != lastSweptPcx || pcy != lastSweptPcy || pcz != lastSweptPcz;
         float dot = lastSweptDirection.dot(camera.direction);
         boolean cameraRotatedSignificantly = dot < DIRECTION_CHANGE_THRESHOLD;
+        boolean playerIsMoving = isPlayerMoving(camera.position, deltaTime);
 
-        boolean shouldResweep = playerChunkChanged || cameraRotatedSignificantly;
+        boolean shouldResweep = playerChunkChanged || cameraRotatedSignificantly || playerIsMoving;
         if (!shouldResweep) {
             return;
         }
@@ -84,11 +102,33 @@ public class FrustumChunkStreamer {
         lastSweptPcz = pcz;
         lastSweptDirection.set(camera.direction);
 
-        submitVisibleCandidates(pcx, pcy, pcz, camera.frustum);
+        submitVisibleCandidatesNearestFirst(pcx, pcy, pcz, camera);
     }
 
-    private void submitVisibleCandidates(int pcx, int pcy, int pcz, Frustum frustum) {
+    private boolean isPlayerMoving(Vector3 currentPosition, float deltaTime) {
+        boolean lastPositionKnown = !Float.isNaN(lastPosition.x);
+        float prevX = lastPosition.x;
+        float prevY = lastPosition.y;
+        float prevZ = lastPosition.z;
+        lastPosition.set(currentPosition);
+        if (!lastPositionKnown) {
+            return false;
+        }
+        float dx = currentPosition.x - prevX;
+        float dy = currentPosition.y - prevY;
+        float dz = currentPosition.z - prevZ;
+        float distanceMoved = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        float speedThisFrame = deltaTime > 0f ? distanceMoved / deltaTime : 0f;
+        return speedThisFrame > MOVEMENT_SWEEP_THRESHOLD;
+    }
+
+    private void submitVisibleCandidatesNearestFirst(int pcx, int pcy, int pcz, PerspectiveCamera camera) {
         float chunkSize = WorldConstants.CHUNK_SIZE;
+        float camX = camera.position.x;
+        float camY = camera.position.y;
+        float camZ = camera.position.z;
+
+        List<int[]> visibleCandidates = new ArrayList<>();
         for (int dy = -vRadius; dy <= vRadius; dy++) {
             for (int dz = -hRadius; dz <= hRadius; dz++) {
                 for (int dx = -hRadius; dx <= hRadius; dx++) {
@@ -102,12 +142,27 @@ public class FrustumChunkStreamer {
                     candidateMin.set(wx, wy, wz);
                     candidateMax.set(wx + chunkSize, wy + chunkSize, wz + chunkSize);
 
-                    boolean isVisible = frustum.boundsInFrustum(candidateMin, candidateMax);
+                    boolean isVisible = camera.frustum.boundsInFrustum(candidateMin, candidateMax);
                     if (isVisible) {
-                        chunkLoader.requestChunkAsync(candidateCx, candidateCy, candidateCz);
+                        visibleCandidates.add(new int[]{candidateCx, candidateCy, candidateCz});
                     }
                 }
             }
+        }
+
+        // Sort nearest-first so the thread pool works on the closest chunks first.
+        visibleCandidates.sort(Comparator.comparingDouble(c -> {
+            float cx = c[0] * chunkSize + chunkSize * 0.5f;
+            float cy = c[1] * chunkSize + chunkSize * 0.5f;
+            float cz = c[2] * chunkSize + chunkSize * 0.5f;
+            float ddx = cx - camX;
+            float ddy = cy - camY;
+            float ddz = cz - camZ;
+            return ddx * ddx + ddy * ddy + ddz * ddz;
+        }));
+
+        for (int[] c : visibleCandidates) {
+            chunkLoader.requestChunkAsync(c[0], c[1], c[2]);
         }
     }
 
