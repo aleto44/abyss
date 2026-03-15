@@ -41,6 +41,21 @@ public class DensityFunction {
     /** Cave noise threshold — voxels with cave noise above this are hollowed out. */
     static final float CAVE_THRESHOLD = 0.45f;
 
+    /**
+     * Density threshold below which a solid voxel is considered part of the
+     * surface shell (exposed or near-exposed face). Types[0] from the layer's
+     * {@code dominantVoxelTypes} is used here — typically dirt or the soft
+     * surface material.
+     */
+    static final float SURFACE_SHELL_DEPTH = 0.35f;
+
+    /**
+     * Density threshold below which a solid voxel is in the mid-shell band.
+     * Types[1] is used here when the layer has three or more types — typically
+     * the transitional material such as dirt beneath a stone core.
+     */
+    static final float MID_SHELL_DEPTH = 0.75f;
+
     /** Hazard-pocket noise threshold — air voxels above this become hazardous. */
     static final float HAZARD_THRESHOLD = 0.55f;
 
@@ -154,7 +169,7 @@ public class DensityFunction {
     public VoxelType assignType(int wx, int wy, int wz, float density, LayerGenConfig cfg, Layer layer) {
         boolean isSolid = density > 0f;
         if (isSolid) {
-            return pickSolidType(wx, wy, wz, cfg);
+            return pickSolidType(wx, wy, wz, density, cfg);
         }
 
         VoxelType surfaceWater = checkSurfaceOcean(wx, wy, wz, layer);
@@ -179,14 +194,46 @@ public class DensityFunction {
     // Private helpers
     // ---------------------------------------------------------------
 
-    private VoxelType pickSolidType(int wx, int wy, int wz, LayerGenConfig cfg) {
+    /**
+     * Picks the solid voxel type for this position using density as a proxy for
+     * depth inside the solid mass.
+     * <p>
+     * The layer's {@code dominantVoxelTypes} are mapped to depth bands:
+     * <ul>
+     *   <li>types[0] — near-surface shell (low density, just above 0)</li>
+     *   <li>types[1] — mid shell (medium density), when the array has ≥ 2 entries</li>
+     *   <li>types[last] — deep core (high density), when the array has ≥ 2 entries</li>
+     * </ul>
+     * A small noise jitter is added to the thresholds so the band boundaries
+     * are organic-looking rather than perfectly flat.
+     * </p>
+     */
+    private VoxelType pickSolidType(int wx, int wy, int wz, float density, LayerGenConfig cfg) {
         VoxelType[] types = cfg.dominantVoxelTypes();
         if (types.length == 1) {
             return types[0];
         }
-        float n = typeNoise.GetNoise(wx, wy, wz); // range roughly -1..1
-        int idx = Math.floorMod((int) ((n + 1f) * 0.5f * types.length * 1000), types.length);
-        return types[idx];
+
+        // typeNoise in [-1,1]; scale it to a small fraction of the shell depths so the
+        // band edges jitter naturally without completely inverting the layering order.
+        float jitter = typeNoise.GetNoise(wx, wy, wz) * (SURFACE_SHELL_DEPTH * 0.4f);
+        float effectiveSurfaceDepth = SURFACE_SHELL_DEPTH + jitter;
+        boolean isInSurfaceShell    = density < effectiveSurfaceDepth;
+        if (isInSurfaceShell) {
+            return types[0];
+        }
+
+        if (types.length == 2) {
+            return types[1];
+        }
+
+        float effectiveMidDepth = MID_SHELL_DEPTH + jitter;
+        boolean isInMidShell    = density < effectiveMidDepth;
+        if (isInMidShell) {
+            return types[1];
+        }
+
+        return types[types.length - 1];
     }
 
     /**
