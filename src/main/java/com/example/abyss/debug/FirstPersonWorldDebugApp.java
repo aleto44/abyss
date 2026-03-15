@@ -25,8 +25,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private static final long WORLD_SEED = 42L;
     private static final int INITIAL_HORIZONTAL_RADIUS = 4;
     private static final int INITIAL_VERTICAL_RADIUS = 4;
-    private static final int STREAM_HORIZONTAL_RADIUS = 5;
-    private static final int STREAM_VERTICAL_RADIUS = 4;
+    private static final int STREAM_HORIZONTAL_RADIUS = 8;
+    private static final int STREAM_VERTICAL_RADIUS = 7;
     private static final float CAMERA_FOV_DEGREES = 75f;
     private static final float CAMERA_NEAR = 0.1f;
     private static final float CAMERA_FAR = 1200f;

@@ -2,7 +2,8 @@ package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.gen.Layer;
-import com.example.abyss.world.gen.LayerConfig;
+import com.example.abyss.world.gen.LayerGenConfig;
+import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.voxel.VoxelType;
 import org.junit.jupiter.api.Test;
 
@@ -54,10 +55,18 @@ class WorldGenColorResolverTest {
                                            float transitionBlend,
                                            int worldX,
                                            int worldY) {
-        LayerConfig config = inTransition
-                ? LayerConfig.lerp(layer.getConfig(), Layer.values()[Math.min(layer.ordinal() + 1, Layer.values().length - 1)].getConfig(), 0.5f)
-                : layer.getConfig();
-        return new WorldGenSample(worldX, worldY, 0, density, voxelType, layer, config, inTransition, transitionBlend);
+        int nextIdx = Math.min(layer.ordinal() + 1, Layer.values().length - 1);
+        Layer nextLayer = Layer.values()[nextIdx];
+
+        LayerGenConfig genConfig = inTransition
+                ? LayerGenConfig.lerp(layer.getGenConfig(), nextLayer.getGenConfig(), 0.5f)
+                : layer.getGenConfig();
+        LayerRenderConfig renderConfig = inTransition
+                ? LayerRenderConfig.lerp(layer.getRenderConfig(), nextLayer.getRenderConfig(), 0.5f)
+                : layer.getRenderConfig();
+
+        return new WorldGenSample(worldX, worldY, 0, density, voxelType, layer,
+                genConfig, renderConfig, inTransition, transitionBlend);
     }
 
     private static int toPackedRgba(Color color) {

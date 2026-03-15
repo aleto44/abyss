@@ -1,20 +1,22 @@
 package com.example.abyss.debug.viewer;
 
 import com.example.abyss.world.gen.Layer;
-import com.example.abyss.world.gen.LayerConfig;
+import com.example.abyss.world.gen.LayerGenConfig;
+import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
  * Immutable render-facing sample for a single world-space position.
  *
- * @param worldX world X coordinate
- * @param worldY world Y coordinate
- * @param worldZ world Z coordinate
- * @param density sampled continuous density value
- * @param voxelType sampled discrete voxel type
- * @param layer primary layer at {@code worldY}
- * @param effectiveConfig resolved layer config, including transition blending when applicable
- * @param inTransition true when the sample lies inside a layer transition zone
+ * @param worldX             world X coordinate
+ * @param worldY             world Y coordinate
+ * @param worldZ             world Z coordinate
+ * @param density            sampled continuous density value
+ * @param voxelType          sampled discrete voxel type
+ * @param layer              primary layer at {@code worldY}
+ * @param effectiveGenConfig resolved generation config, including transition blending
+ * @param effectiveRenderConfig resolved render config, including transition blending
+ * @param inTransition       true when the sample lies inside a layer transition zone
  * @param transitionBlendFactor 0.0 = upper layer, 1.0 = lower layer, -1.0 when not in transition
  */
 public record WorldGenSample(
@@ -24,7 +26,8 @@ public record WorldGenSample(
         float density,
         VoxelType voxelType,
         Layer layer,
-        LayerConfig effectiveConfig,
+        LayerGenConfig effectiveGenConfig,
+        LayerRenderConfig effectiveRenderConfig,
         boolean inTransition,
         float transitionBlendFactor
 ) {

@@ -6,105 +6,121 @@ import com.example.abyss.world.voxel.VoxelType;
 /**
  * The distinct layers of the Abyss, ordered from the surface down to the deepest reaches.
  * <p>
- * Depth uses the Y axis: the overworld surface sits above y = 0, and abyss depth increases negatively.
- * Each layer owns a fixed depth range and a {@link LayerConfig} that drives
- * the procedural generation pipeline.
+ * Depth uses the Y axis: the overworld surface sits above y = 0, and abyss depth increases
+ * negatively.  Each layer owns a fixed depth range plus a {@link LayerGenConfig} (drives
+ * procedural generation) and a {@link LayerRenderConfig} (drives fog and colour tinting).
  * </p>
  */
 public enum Layer {
 
     SURFACE(512, 0,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.28f,   // elevated threshold – more open sky between mountain ridges
                     0.0045f, // broad, sweeping mountain shapes around the abyss
                     1.15f,   // tall terrain variation for a ring of peaks
                     520f,    // very wide opening at the surface
                     new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS},
-                    null,
+                    null
+            ),
+            new LayerRenderConfig(
                     320f,    // brightest, clearest layer
                     new Color[]{new Color(0.62f, 0.72f, 0.68f, 1f), new Color(0.88f, 0.90f, 0.95f, 1f)}
             )),
 
     THE_EDGE(0, -500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.10f,   // baseDensityThreshold – lots of solid ground
                     0.012f,  // noiseFrequency – large, gentle hills
                     0.6f,    // noiseAmplitude
                     200f,    // shaftDiameter – medium shaft
                     new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE},
-                    null,    // no hazard
+                    null     // no hazard
+            ),
+            new LayerRenderConfig(
                     256f,    // visibility – clear
                     new Color[]{new Color(0.35f, 0.75f, 0.3f, 1f), new Color(0.55f, 0.45f, 0.25f, 1f)}
             )),
 
     FOREST_DEPTHS(-500, -1500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.28f,   // raised threshold – dense solid terrain with cave corridors
                     0.009f,  // lower frequency – wide cave-friendly formations
                     0.7f,
                     180f,
                     new VoxelType[]{VoxelType.WOOD, VoxelType.VINE, VoxelType.DIRT, VoxelType.STONE},
-                    null,
+                    null
+            ),
+            new LayerRenderConfig(
                     192f,
                     new Color[]{new Color(0.15f, 0.5f, 0.15f, 1f), new Color(0.3f, 0.25f, 0.1f, 1f)}
             )),
 
     HANGING_GARDENS(-1500, -2500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.20f,   // moderate threshold – floating shelves with traversable gaps
                     0.010f,  // lower frequency – large platform-scale formations
                     0.75f,   // amplitude – dramatic but not fully disconnected
                     250f,    // wider shaft through floating islands
                     new VoxelType[]{VoxelType.STONE, VoxelType.VINE, VoxelType.GRASS},
-                    null,
+                    null
+            ),
+            new LayerRenderConfig(
                     220f,
                     new Color[]{new Color(0.4f, 0.8f, 0.5f, 1f), new Color(0.7f, 0.85f, 0.6f, 1f)}
             )),
 
     SKY_WALLS(-2500, -3500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.45f,   // very high threshold – vast emptiness
                     0.008f,  // low frequency – giant wall features
                     0.5f,
                     400f,    // very wide shaft in the open air
                     new VoxelType[]{VoxelType.STONE, VoxelType.OBSIDIAN},
-                    null,
+                    null
+            ),
+            new LayerRenderConfig(
                     512f,    // huge visibility – can see far across the void
                     new Color[]{new Color(0.6f, 0.7f, 0.85f, 1f), new Color(0.4f, 0.45f, 0.6f, 1f)}
             )),
 
     MYCELIUM(-3500, -4500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.08f,   // fairly dense – packed fungal growth
                     0.025f,  // high frequency – fine organic detail
                     0.65f,
                     120f,    // narrow shaft – claustrophobic
                     new VoxelType[]{VoxelType.MUSHROOM, VoxelType.DIRT, VoxelType.STONE},
-                    VoxelType.TOXIC_GAS,  // spore clouds
+                    VoxelType.TOXIC_GAS  // spore clouds
+            ),
+            new LayerRenderConfig(
                     64f,     // very low visibility
                     new Color[]{new Color(0.6f, 0.2f, 0.65f, 1f), new Color(0.3f, 0.8f, 0.5f, 1f)}
             )),
 
     OCEANIA(-4500, -5500,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.25f,   // moderate – sparse islands in water
                     0.010f,  // low frequency – large ocean features
                     0.4f,
                     350f,    // wide shaft through the ocean
                     new VoxelType[]{VoxelType.CORAL, VoxelType.STONE, VoxelType.DIRT},
-                    null,
+                    null
+            ),
+            new LayerRenderConfig(
                     128f,    // murky underwater
                     new Color[]{new Color(0.1f, 0.3f, 0.7f, 1f), new Color(0.05f, 0.2f, 0.5f, 1f)}
             )),
 
     DEEP_EXTREMES(-5500, -7000,
-            new LayerConfig(
+            new LayerGenConfig(
                     0.32f,   // raised threshold – solid dangerous terrain with cave corridors
                     0.008f,  // lower frequency – large chaotic passages
                     0.85f,   // high amplitude – chaotic terrain
                     150f,    // narrow, dangerous shaft
                     new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL, VoxelType.STONE},
-                    VoxelType.TOXIC_GAS,
+                    VoxelType.TOXIC_GAS
+            ),
+            new LayerRenderConfig(
                     48f,     // near-zero visibility
                     new Color[]{new Color(0.15f, 0.05f, 0.2f, 1f), new Color(0.5f, 0.1f, 0.1f, 1f)}
             ));
@@ -113,15 +129,17 @@ public enum Layer {
     private final int yStart;
     /** Inclusive lower bound (deeper, more negative). */
     private final int yEnd;
-    private final LayerConfig config;
+    private final LayerGenConfig    genConfig;
+    private final LayerRenderConfig renderConfig;
 
     /** Width of the transition blend zone in voxels (centred on each boundary). */
     public static final int TRANSITION_SIZE = 64;
 
-    Layer(int yStart, int yEnd, LayerConfig config) {
-        this.yStart = yStart;
-        this.yEnd = yEnd;
-        this.config = config;
+    Layer(int yStart, int yEnd, LayerGenConfig genConfig, LayerRenderConfig renderConfig) {
+        this.yStart       = yStart;
+        this.yEnd         = yEnd;
+        this.genConfig    = genConfig;
+        this.renderConfig = renderConfig;
     }
 
     public int getYStart() {
@@ -132,8 +150,14 @@ public enum Layer {
         return yEnd;
     }
 
-    public LayerConfig getConfig() {
-        return config;
+    /** Generation parameters for this layer (density thresholds, noise, shaft size, etc.). */
+    public LayerGenConfig getGenConfig() {
+        return genConfig;
+    }
+
+    /** Rendering parameters for this layer (visibility, colour palette). */
+    public LayerRenderConfig getRenderConfig() {
+        return renderConfig;
     }
 
     // ---- lookup helpers ----
@@ -149,7 +173,6 @@ public enum Layer {
                 return l;
             }
         }
-        // Above the top → surface layer; below the bottom → deepest layer
         if (worldY > values()[0].yStart) {
             return values()[0];
         }
@@ -157,8 +180,8 @@ public enum Layer {
     }
 
     /**
-     * If {@code worldY} falls within a transition zone, returns the
-     * two layers and the blend factor.  Otherwise returns {@code null}.
+     * If {@code worldY} falls within a transition zone, returns the two layers
+     * and the blend factor.  Otherwise returns {@code null}.
      */
     public static TransitionInfo getTransition(int worldY) {
         Layer[] layers = values();
@@ -168,7 +191,7 @@ public enum Layer {
             int upper = boundary + halfZone;
             int lower = boundary - halfZone;
             if (worldY <= upper && worldY > lower) {
-                float t = 1f - (float)(worldY - lower) / (float)(upper - lower); // 0 = shallow, 1 = deep
+                float t = 1f - (float) (worldY - lower) / (float) (upper - lower); // 0 = shallow, 1 = deep
                 return new TransitionInfo(layers[i], layers[i + 1], t);
             }
         }
@@ -178,14 +201,20 @@ public enum Layer {
     /**
      * Describes a position inside a transition zone between two layers.
      *
-     * @param upper      the shallower layer
-     * @param lower      the deeper layer
+     * @param upper       the shallower layer
+     * @param lower       the deeper layer
      * @param blendFactor 0.0 = fully upper, 1.0 = fully lower
      */
     public record TransitionInfo(Layer upper, Layer lower, float blendFactor) {
-        /** Convenience: returns the interpolated config for this blend position. */
-        public LayerConfig blendedConfig() {
-            return LayerConfig.lerp(upper.config, lower.config, blendFactor);
+
+        /** Interpolated generation config at this blend position. */
+        public LayerGenConfig blendedGenConfig() {
+            return LayerGenConfig.lerp(upper.genConfig, lower.genConfig, blendFactor);
+        }
+
+        /** Interpolated render config at this blend position. */
+        public LayerRenderConfig blendedRenderConfig() {
+            return LayerRenderConfig.lerp(upper.renderConfig, lower.renderConfig, blendFactor);
         }
     }
 }

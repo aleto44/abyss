@@ -3,7 +3,7 @@ package com.example.abyss.debug.viewer;
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.gen.Layer;
-import com.example.abyss.world.gen.LayerConfig;
+import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
@@ -49,14 +49,14 @@ public class ChunkStreamingWorldGenSampler implements WorldGenDataSampler {
 
         Layer layer = Layer.forY(worldY);
         Layer.TransitionInfo transition = Layer.getTransition(worldY);
-        LayerConfig effectiveConfig = layer.getConfig();
+        LayerRenderConfig effectiveRenderConfig = layer.getRenderConfig();
         boolean inTransition = false;
         if (transition != null) {
-            effectiveConfig = transition.blendedConfig();
+            effectiveRenderConfig = transition.blendedRenderConfig();
             inTransition = true;
         }
 
-        colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveConfig, inTransition, outColor);
+        colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveRenderConfig, inTransition, outColor);
         return true;
     }
 }

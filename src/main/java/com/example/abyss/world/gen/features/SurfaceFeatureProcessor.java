@@ -220,7 +220,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     }
 
     private static boolean shouldPreserveShaft(int wx, int wz) {
-        float shaftRadius = Layer.SURFACE.getConfig().shaftDiameter() * 0.5f;
+        float shaftRadius = Layer.SURFACE.getGenConfig().shaftDiameter() * 0.5f;
         float horizontalDistance = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
         return horizontalDistance <= shaftRadius + SHAFT_MARGIN;
     }

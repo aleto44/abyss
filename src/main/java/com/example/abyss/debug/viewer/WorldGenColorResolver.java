@@ -1,7 +1,7 @@
 package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
-import com.example.abyss.world.gen.LayerConfig;
+import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
@@ -24,7 +24,7 @@ public class WorldGenColorResolver {
                 sample.worldY(),
                 sample.density(),
                 sample.voxelType(),
-                sample.effectiveConfig(),
+                sample.effectiveRenderConfig(),
                 sample.inTransition(),
                 outColor
         );
@@ -35,12 +35,12 @@ public class WorldGenColorResolver {
                              int worldY,
                              float density,
                              VoxelType voxelType,
-                             LayerConfig effectiveConfig,
+                             LayerRenderConfig renderConfig,
                              boolean inTransition,
                              Color outColor) {
         if (voxelType == VoxelType.AIR) {
-            resolveAirColor(density, effectiveConfig, outColor);
-            applyLayerTint(outColor, effectiveConfig);
+            resolveAirColor(density, renderConfig, outColor);
+            applyLayerTint(outColor, renderConfig);
             if (inTransition) {
                 applyTransitionOverlay(outColor, worldX, worldY);
             }
@@ -49,7 +49,7 @@ public class WorldGenColorResolver {
             resolveWaterColor(worldX, worldY, outColor);
         } else {
             outColor.set(voxelType.getBaseColor());
-            applyLayerTint(outColor, effectiveConfig);
+            applyLayerTint(outColor, renderConfig);
             if (inTransition) {
                 applyTransitionOverlay(outColor, worldX, worldY);
             }
@@ -77,7 +77,7 @@ public class WorldGenColorResolver {
         outColor.a = 1f;
     }
 
-    private static void resolveAirColor(float density, LayerConfig config, Color outColor) {
+    private static void resolveAirColor(float density, LayerRenderConfig config, Color outColor) {
         Color[] palette = config.colorPalette();
         if (palette != null && palette.length > 0) {
             outColor.set(palette[0]);
@@ -92,7 +92,7 @@ public class WorldGenColorResolver {
         outColor.a = 1f;
     }
 
-    private static void applyLayerTint(Color color, LayerConfig config) {
+    private static void applyLayerTint(Color color, LayerRenderConfig config) {
         Color[] palette = config.colorPalette();
         if (palette == null || palette.length == 0) {
             return;

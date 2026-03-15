@@ -2,7 +2,8 @@ package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.gen.Layer;
-import com.example.abyss.world.gen.LayerConfig;
+import com.example.abyss.world.gen.LayerGenConfig;
+import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
@@ -31,10 +32,13 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
                                Color outColor) {
         Layer layer = Layer.forY(worldY);
         Layer.TransitionInfo transition = Layer.getTransition(worldY);
-        LayerConfig effectiveConfig = layer.getConfig();
+
+        LayerGenConfig effectiveGenConfig = layer.getGenConfig();
+        LayerRenderConfig effectiveRenderConfig = layer.getRenderConfig();
         boolean inTransition = false;
         if (transition != null) {
-            effectiveConfig = transition.blendedConfig();
+            effectiveGenConfig    = transition.blendedGenConfig();
+            effectiveRenderConfig = transition.blendedRenderConfig();
             inTransition = true;
         }
 
@@ -49,7 +53,7 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
         int localZ = Math.floorMod(worldZ, VoxelData.SIZE);
         float density = data.getDensity(localX, localY, localZ);
         VoxelType voxelType = data.getType(localX, localY, localZ);
-        colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveConfig, inTransition, outColor);
+        colorResolver.resolveColor(worldX, worldY, density, voxelType, effectiveRenderConfig, inTransition, outColor);
         return true;
     }
 
