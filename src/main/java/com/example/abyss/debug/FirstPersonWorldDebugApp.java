@@ -25,7 +25,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private static final long WORLD_SEED = 42L;
     private static final int INITIAL_HORIZONTAL_RADIUS = 4;
     private static final int INITIAL_VERTICAL_RADIUS = 4;
-    private static final int STREAM_HORIZONTAL_RADIUS = 7;
+    private static final int STREAM_HORIZONTAL_RADIUS = 12;
     private static final int STREAM_VERTICAL_RADIUS = 4;
     private static final float CAMERA_FOV_DEGREES = 75f;
     private static final float CAMERA_NEAR = 0.1f;
@@ -46,6 +46,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private PerspectiveCamera camera;
     private FirstPersonDebugController controller;
     private AbyssWorld world;
+    private FrustumChunkStreamer chunkStreamer;
     private String startupInfo;
     private String debugInfo;
 
@@ -71,6 +72,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         world = new AbyssWorld(WORLD_SEED);
         world.init();
         world.getChunkLoader().loadChunksAround((int) START_POSITION.x, (int) START_POSITION.y, (int) START_POSITION.z, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
+        chunkStreamer = new FrustumChunkStreamer(world.getChunkLoader(), STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
 
         startupInfo = String.format(
                 "3D first-person debug viewer | Seed: %d | Start: (%.0f, %.0f, %.0f)",
@@ -129,11 +131,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     }
 
     private void streamWorldAroundCamera() {
-        int worldX = Math.round(camera.position.x);
-        int worldY = Math.round(camera.position.y);
-        int worldZ = Math.round(camera.position.z);
-        world.getChunkLoader().loadChunksAroundAsync(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
-        world.getChunkLoader().unloadDistantChunks(worldX, worldY, worldZ, STREAM_HORIZONTAL_RADIUS + 1, STREAM_VERTICAL_RADIUS + 1);
+        chunkStreamer.update(camera, Gdx.graphics.getDeltaTime());
     }
 
     private void renderWorld() {

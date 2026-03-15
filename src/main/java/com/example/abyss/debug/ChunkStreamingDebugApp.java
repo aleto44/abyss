@@ -69,7 +69,20 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
 
     @Override
     protected void onViewChanged(DebugSliceViewerController.InputResult result) {
-        world.getChunkLoader().loadChunksAroundAsync(0, getSliceRenderer().getCenterWorldY(), getSliceRenderer().getSliceWorldZ(), INITIAL_HORIZONTAL_RADIUS + 1, INITIAL_VERTICAL_RADIUS + 2);
+        int centerWorldY = getSliceRenderer().getCenterWorldY();
+        int sliceWorldZ = getSliceRenderer().getSliceWorldZ();
+        int hRadius = INITIAL_HORIZONTAL_RADIUS + 1;
+        int vRadius = INITIAL_VERTICAL_RADIUS + 2;
+        int pcx = Math.floorDiv(0, 32);
+        int pcy = Math.floorDiv(centerWorldY, 32);
+        int pcz = Math.floorDiv(sliceWorldZ, 32);
+        for (int dy = -vRadius; dy <= vRadius; dy++) {
+            for (int dz = -hRadius; dz <= hRadius; dz++) {
+                for (int dx = -hRadius; dx <= hRadius; dx++) {
+                    world.getChunkLoader().requestChunkAsync(pcx + dx, pcy + dy, pcz + dz);
+                }
+            }
+        }
     }
 
     @Override

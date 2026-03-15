@@ -8,29 +8,24 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Manages the load/unload lifecycle for chunks around the player.
+ * Low-level executor for chunk load/unload operations.
  * <p>
- * Supports both synchronous (init/testing) and asynchronous (per-frame)
- * loading. Delegates async completion notification to the
- * {@link MeshCoordinator} so that boundary meshes are invalidated whenever
- * new chunks become available.
+ * Provides three primitives:
+ * <ul>
+ *   <li>{@link #requestChunkAsync} — submit a single chunk coordinate for background generation.</li>
+ *   <li>{@link #pollCompletedChunks} — drain completed chunks and trigger boundary remeshing.</li>
+ *   <li>{@link #unloadDistantChunks} — evict loaded and pending chunks beyond a given radius.</li>
+ * </ul>
+ * This class holds no sweep strategy, no player-position state, and no camera knowledge.
+ * Callers are responsible for deciding <em>which</em> chunks to request and <em>when</em>
+ * — see {@link com.example.abyss.debug.FrustumChunkStreamer} for a frustum-based policy.
+ * The synchronous {@link #loadChunksAround} method exists for init and testing only.
  * </p>
  */
 public class ChunkLoader {
 
-    private static final int NO_CHUNK_COORD = Integer.MIN_VALUE;
-
     private final ChunkManager chunkManager;
     private final MeshCoordinator meshCoordinator;
-
-    /**
-     * The chunk-space position used in the last {@link #loadChunksAroundAsync} sweep.
-     * Chunk requests are only re-submitted when the player crosses a chunk boundary,
-     * preventing per-frame O(volume) submission spam.
-     */
-    private int lastLoadPcx = NO_CHUNK_COORD;
-    private int lastLoadPcy = NO_CHUNK_COORD;
-    private int lastLoadPcz = NO_CHUNK_COORD;
 
     public ChunkLoader(ChunkManager chunkManager, MeshCoordinator meshCoordinator) {
         this.chunkManager = chunkManager;
@@ -42,33 +37,12 @@ public class ChunkLoader {
     // ----------------------------------------------------------------
 
     /**
-     * Queues async generation for all chunks within the given radii of the world
-     * position. Only re-submits the full volume when the player has crossed into a
-     * new chunk since the last call, preventing per-frame O(volume) submission spam.
-     * Non-blocking — chunks arrive over subsequent frames via {@link #pollCompletedChunks()}.
+     * Submits a single chunk coordinate for async generation.
+     * No-op if the chunk is already loaded or pending.
+     * Non-blocking — the result arrives via {@link #pollCompletedChunks()}.
      */
-    public void loadChunksAroundAsync(int worldX, int worldY, int worldZ,
-                                      int hRadius, int vRadius) {
-        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
-        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
-        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
-
-        boolean playerChunkChanged = pcx != lastLoadPcx || pcy != lastLoadPcy || pcz != lastLoadPcz;
-        if (!playerChunkChanged) {
-            return;
-        }
-
-        lastLoadPcx = pcx;
-        lastLoadPcy = pcy;
-        lastLoadPcz = pcz;
-
-        for (int dy = -vRadius; dy <= vRadius; dy++) {
-            for (int dz = -hRadius; dz <= hRadius; dz++) {
-                for (int dx = -hRadius; dx <= hRadius; dx++) {
-                    chunkManager.requestChunkAsync(pcx + dx, pcy + dy, pcz + dz);
-                }
-            }
-        }
+    public void requestChunkAsync(int chunkX, int chunkY, int chunkZ) {
+        chunkManager.requestChunkAsync(chunkX, chunkY, chunkZ);
     }
 
     /**
