@@ -9,6 +9,7 @@ This document provides guidelines and instructions for using GitHub Copilot in t
 - Modular Code: Write small, focused functions and split out classes to allow Copilot to generate more accurate suggestions.
 - Always use explicit curly brackets for control flow statements (`if`, `else`, `for`, `while`, etc.). Do not use implied/optional curly brackets. For example, use `if (future != null) { future.cancel(false); }` instead of `if (future != null) future.cancel(false);`
 - Default terminal commands to Git Bash syntax on Windows unless the user explicitly asks for a different shell. Use Git Bash-style paths and command chaining. For example: `cd '/c/Users/alexj/IdeaProjects/abyss' && ./gradlew.bat test`
+- Dont make obvious commments.
 
 ## Code Readability & Boolean Clarity
 - **Avoid short-circuit returns/guards by default**: Prefer not using early-return short-circuits unless doing so makes the overall method significantly easier to read as a whole. Favour explicit, structured control flow that reveals the full intent of a method.

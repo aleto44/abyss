@@ -1,5 +1,7 @@
 package com.example.abyss.world;
 
+import com.example.abyss.world.gen.GenConfigResolver;
+import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.meshing.MeshCoordinator;
 
 /**
@@ -19,18 +21,24 @@ import com.example.abyss.world.meshing.MeshCoordinator;
 public class AbyssWorld {
 
     private final long seed;
+    private final GenConfigResolver resolver;
     private ChunkManager chunkManager;
     private WorldVoxelAccess voxelAccess;
     private MeshCoordinator meshCoordinator;
     private ChunkLoader chunkLoader;
 
     public AbyssWorld(long seed) {
+        this(seed, GenConfigResolver.DEFAULT);
+    }
+
+    public AbyssWorld(long seed, GenConfigResolver resolver) {
         this.seed = seed;
+        this.resolver = resolver;
     }
 
     /** Initialises the generation pipeline and all collaborator objects. Call once. */
     public void init() {
-        chunkManager = new ChunkManager(seed);
+        chunkManager = new ChunkManager(seed, resolver);
         meshCoordinator = new MeshCoordinator(chunkManager);
         voxelAccess = new WorldVoxelAccess(chunkManager);
         voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);

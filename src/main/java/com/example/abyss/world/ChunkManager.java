@@ -1,6 +1,7 @@
 package com.example.abyss.world;
 
 import com.example.abyss.util.KeyedTaskQueue;
+import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshManager;
@@ -45,8 +46,8 @@ public class ChunkManager {
     private final KeyedTaskQueue<ChunkKey, VoxelChunk> taskQueue;
     private final MeshManager meshManager;
 
-    public ChunkManager(long seed) {
-        this.generatorLocal = ThreadLocal.withInitial(() -> new ProceduralGenerator(seed));
+    public ChunkManager(long seed, GenConfigResolver resolver) {
+        this.generatorLocal = ThreadLocal.withInitial(() -> new ProceduralGenerator(seed, resolver));
         this.taskQueue = KeyedTaskQueue.<ChunkKey, VoxelChunk>builder()
                 .threadNamePrefix("ChunkGen")
                 .build();

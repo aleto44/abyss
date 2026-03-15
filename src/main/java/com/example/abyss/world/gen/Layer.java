@@ -32,7 +32,7 @@ public enum Layer {
                     0.10f,   // baseDensityThreshold – lots of solid ground
                     0.012f,  // noiseFrequency – large, gentle hills
                     0.6f,    // noiseAmplitude
-                    200f,    // shaftDiameter – medium shaft
+                    520f,    // shaftDiameter – medium shaft
                     new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE},
                     null     // no hazard
             ),

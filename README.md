@@ -14,11 +14,6 @@ Debug applications now live under `src/main/java/com/example/abyss/debug/`.
 - `com.example.abyss.debug.ChunkStreamingDebugLauncher`
   - uses `AbyssWorld` and the live chunk-streaming pipeline
   - useful for streaming, chunk lifecycle, and meshing/debug observation in the 2D slice view
-- `com.example.abyss.debug.ProceduralGeneratorDebugLauncher`
-  - samples `ProceduralGenerator` directly
-  - bypasses chunk streaming and avoids `AbyssWorld.getOrGenerateChunk(...)`
-  - useful for fast slice inspection of raw worldgen output
-
 ### Current default entry point
 `com.example.abyss.Main` currently delegates to `FirstPersonWorldDebugLauncher` so the Gradle application entry launches the 3D debug viewer.
 

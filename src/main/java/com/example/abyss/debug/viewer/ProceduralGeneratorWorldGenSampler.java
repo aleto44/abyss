@@ -2,7 +2,6 @@ package com.example.abyss.debug.viewer;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.gen.Layer;
-import com.example.abyss.world.gen.LayerGenConfig;
 import com.example.abyss.world.gen.LayerRenderConfig;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.voxel.VoxelData;
@@ -33,11 +32,9 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
         Layer layer = Layer.forY(worldY);
         Layer.TransitionInfo transition = Layer.getTransition(worldY);
 
-        LayerGenConfig effectiveGenConfig = layer.getGenConfig();
         LayerRenderConfig effectiveRenderConfig = layer.getRenderConfig();
         boolean inTransition = false;
         if (transition != null) {
-            effectiveGenConfig    = transition.blendedGenConfig();
             effectiveRenderConfig = transition.blendedRenderConfig();
             inTransition = true;
         }
@@ -57,6 +54,4 @@ public class ProceduralGeneratorWorldGenSampler implements WorldGenDataSampler {
         return true;
     }
 
-    private record ChunkKey(int x, int y, int z) {
-    }
 }

@@ -33,11 +33,18 @@ public class ProceduralGenerator {
     private static final int SIZE = VoxelData.SIZE;
 
     private final DensityFunction densityFunction;
+    private final GenConfigResolver resolver;
 
     /** Per-layer feature processors, applied as a post-processing pass after voxel fill. */
     private final Map<Layer, LayerFeatureProcessor> featureProcessors = new EnumMap<>(Layer.class);
 
+
     public ProceduralGenerator(long seed) {
+        this(seed, GenConfigResolver.DEFAULT);
+    }
+
+    public ProceduralGenerator(long seed, GenConfigResolver resolver) {
+        this.resolver = resolver;
         densityFunction = new DensityFunction(seed);
 
         featureProcessors.put(Layer.SURFACE,         new SurfaceFeatureProcessor(seed));
@@ -51,7 +58,7 @@ public class ProceduralGenerator {
     }
 
     /**
-     * Generate voxel data for a single chunk.
+     * Generate voxel data for a single chunk using the baked {@link Layer} configs.
      *
      * @param chunkX chunk coordinate (world x = chunkX * 32)
      * @param chunkY chunk coordinate (world y = chunkY * 32)
@@ -59,6 +66,17 @@ public class ProceduralGenerator {
      * @return fully populated {@link VoxelData}
      */
     public VoxelData generateChunk(int chunkX, int chunkY, int chunkZ) {
+        return generateChunk(chunkX, chunkY, chunkZ, resolver);
+    }
+
+    /**
+     * @param chunkX   chunk coordinate (world x = chunkX * 32)
+     * @param chunkY   chunk coordinate (world y = chunkY * 32)
+     * @param chunkZ   chunk coordinate (world z = chunkZ * 32)
+     * @param resolver supplies the {@link LayerGenConfig} for each Y-slice
+     * @return fully populated {@link VoxelData}
+     */
+    public VoxelData generateChunk(int chunkX, int chunkY, int chunkZ, GenConfigResolver resolver) {
         VoxelData data = new VoxelData();
         int worldBaseX = chunkX * SIZE;
         int worldBaseY = chunkY * SIZE;
@@ -73,7 +91,7 @@ public class ProceduralGenerator {
 
             // Step 1: resolve layer gen config once per Y-slice (config only depends on Y)
             Layer primaryLayer = Layer.forY(wy);
-            LayerGenConfig cfg = resolveGenConfig(wy, primaryLayer);
+            LayerGenConfig cfg = resolver.resolve(wy, primaryLayer);
 
             // Step 2: update terrain noise frequency only when it changes
             float freq = cfg.noiseFrequency();
@@ -105,25 +123,6 @@ public class ProceduralGenerator {
         }
 
         return data;
-    }
-
-    // ---------------------------------------------------------------
-    // Internal helpers
-    // ---------------------------------------------------------------
-
-    /**
-     * Returns the effective {@link LayerGenConfig} for a given world-Y,
-     * blending between two layers if inside a transition zone.
-     *
-     * @param worldY       the world Y coordinate
-     * @param primaryLayer the layer already resolved via {@link Layer#forY(int)}
-     */
-    private static LayerGenConfig resolveGenConfig(int worldY, Layer primaryLayer) {
-        Layer.TransitionInfo ti = Layer.getTransition(worldY);
-        if (ti != null) {
-            return ti.blendedGenConfig();
-        }
-        return primaryLayer.getGenConfig();
     }
 
     // ---------------------------------------------------------------
