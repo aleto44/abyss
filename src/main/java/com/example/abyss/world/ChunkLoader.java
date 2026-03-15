@@ -73,7 +73,10 @@ public class ChunkLoader {
 
     /**
      * Drains completed async chunk results. Should be called once per frame.
-     * Triggers boundary remeshing for each newly-loaded chunk.
+     * Triggers boundary remeshing for each newly-loaded chunk, then sweeps all
+     * dirty-but-unqueued chunks regardless of whether any new chunks arrived.
+     * This ensures chunks that were previously blocked waiting for a neighbour
+     * are retried every frame rather than only when another chunk happens to load.
      *
      * @return chunks that just became available this tick
      */
@@ -84,8 +87,10 @@ public class ChunkLoader {
                 meshCoordinator.markNeighborsForBoundaryRemesh(
                         chunk.getChunkX(), chunk.getChunkY(), chunk.getChunkZ());
             }
-            meshCoordinator.queueDirtyMeshes();
         }
+        // Always sweep for dirty chunks every frame so previously-blocked meshes
+        // are retried as soon as their neighbours become available.
+        meshCoordinator.queueDirtyMeshes();
         return chunks;
     }
 

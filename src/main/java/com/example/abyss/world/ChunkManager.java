@@ -224,9 +224,13 @@ public class ChunkManager {
         return Collections.unmodifiableList(chunks);
     }
 
-    /** All loaded chunk records currently in memory (read-only snapshot). */
-    public Collection<LoadedChunk> getLoadedChunkEntries() {
-        return Collections.unmodifiableList(new ArrayList<>(loaded.values()));
+    /**
+     * Returns a live, non-copying view of all loaded chunk records.
+     * Suitable for read-only iteration on the main thread where no snapshot
+     * is needed (e.g. per-frame mesh sweeps).
+     */
+    public Iterable<LoadedChunk> iterateLoadedChunks() {
+        return loaded.values();
     }
 
     /** Number of loaded chunks. */

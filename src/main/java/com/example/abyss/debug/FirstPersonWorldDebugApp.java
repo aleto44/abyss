@@ -25,8 +25,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private static final long WORLD_SEED = 42L;
     private static final int INITIAL_HORIZONTAL_RADIUS = 4;
     private static final int INITIAL_VERTICAL_RADIUS = 4;
-    private static final int STREAM_HORIZONTAL_RADIUS = 8;
-    private static final int STREAM_VERTICAL_RADIUS = 7;
+    private static final int STREAM_HORIZONTAL_RADIUS = 7;
+    private static final int STREAM_VERTICAL_RADIUS = 4;
     private static final float CAMERA_FOV_DEGREES = 75f;
     private static final float CAMERA_NEAR = 0.1f;
     private static final float CAMERA_FAR = 1200f;
@@ -144,7 +144,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
-        for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
+        for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
             VoxelChunk chunk = loadedChunk.chunk();
             if (!isChunkVisible(chunk)) {
                 culled++;
@@ -162,7 +162,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         Gdx.gl.glDepthMask(false);
-        for (LoadedChunk loadedChunk : world.getChunkManager().getLoadedChunkEntries()) {
+        for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
             VoxelChunk chunk = loadedChunk.chunk();
             if (!isChunkVisible(chunk)) {
                 continue;

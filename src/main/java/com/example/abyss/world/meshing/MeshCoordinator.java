@@ -56,14 +56,17 @@ public class MeshCoordinator {
     }
 
     /**
-     * Marks the newly-loaded chunk and its negative-face neighbors as
-     * mesh-dirty so boundary seams are rebuilt.
+     * Marks the newly-loaded chunk and all six face-adjacent neighbours as
+     * mesh-dirty so that boundary seams are rebuilt on every side.
      */
     public void markNeighborsForBoundaryRemesh(int cx, int cy, int cz) {
-        chunkManager.markChunkMeshDirty(new ChunkKey(cx, cy, cz));
-        chunkManager.markChunkMeshDirty(new ChunkKey(cx - 1, cy, cz));
-        chunkManager.markChunkMeshDirty(new ChunkKey(cx, cy - 1, cz));
-        chunkManager.markChunkMeshDirty(new ChunkKey(cx, cy, cz - 1));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx,     cy,     cz    ));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx - 1, cy,     cz    ));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx + 1, cy,     cz    ));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx,     cy - 1, cz    ));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx,     cy + 1, cz    ));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx,     cy,     cz - 1));
+        chunkManager.markChunkMeshDirty(new ChunkKey(cx,     cy,     cz + 1));
     }
 
     // ----------------------------------------------------------------
@@ -72,21 +75,20 @@ public class MeshCoordinator {
 
     /**
      * Scans all loaded chunks and submits those that are dirty but not yet
-     * queued to the background mesh builder.
+     * queued to the background mesh builder. Iterates the live chunk collection
+     * directly — no copy is made.
      */
     public void queueDirtyMeshes() {
-        List<ChunkKey> keys = new ArrayList<>();
-        for (LoadedChunk loadedChunk : chunkManager.getLoadedChunkEntries()) {
-            if (loadedChunk.renderState().isMeshDirty() && !loadedChunk.renderState().isMeshQueued()) {
-                keys.add(new ChunkKey(
+        for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
+            ChunkMeshState renderState = loadedChunk.renderState();
+            boolean needsQueuing = renderState.isMeshDirty() && !renderState.isMeshQueued();
+            if (needsQueuing) {
+                chunkManager.requestChunkMesh(new ChunkKey(
                         loadedChunk.chunk().getChunkX(),
                         loadedChunk.chunk().getChunkY(),
                         loadedChunk.chunk().getChunkZ()
                 ));
             }
-        }
-        for (ChunkKey key : keys) {
-            chunkManager.requestChunkMesh(key);
         }
     }
 
@@ -102,7 +104,7 @@ public class MeshCoordinator {
     /** Returns all opaque meshes from currently-loaded chunks. */
     public Iterable<Mesh> getOpaqueMeshes() {
         List<Mesh> meshes = new ArrayList<>();
-        for (LoadedChunk loadedChunk : chunkManager.getLoadedChunkEntries()) {
+        for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
             meshes.addAll(loadedChunk.renderState().getOpaqueMeshes());
         }
         return meshes;
@@ -111,7 +113,7 @@ public class MeshCoordinator {
     /** Returns all transparent meshes from currently-loaded chunks. */
     public Iterable<Mesh> getTransparentMeshes() {
         List<Mesh> meshes = new ArrayList<>();
-        for (LoadedChunk loadedChunk : chunkManager.getLoadedChunkEntries()) {
+        for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
             meshes.addAll(loadedChunk.renderState().getTransparentMeshes());
         }
         return meshes;
