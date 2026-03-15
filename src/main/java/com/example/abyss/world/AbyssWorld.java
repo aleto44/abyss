@@ -52,11 +52,8 @@ public class AbyssWorld {
 
     public long getSeed() { return seed; }
 
-    /** Shuts down background generation threads and releases all resources. */
+    /** Shuts down background generation threads and releases resources. */
     public void dispose() {
-        if (meshCoordinator != null) {
-            meshCoordinator.dispose();
-        }
         if (chunkManager != null) {
             chunkManager.shutdown();
         }

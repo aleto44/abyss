@@ -235,7 +235,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 camera.direction.z,
                 world.getChunkManager().getLoadedCount(),
                 world.getChunkManager().getPendingCount(),
-                world.getMeshCoordinator().getPendingMeshCount(),
+                world.getChunkManager().getPendingMeshCount(),
                 lastCulledChunks,
                 FirstPersonDebugController.getControlSummary(),
                 Gdx.graphics.getFramesPerSecond()
