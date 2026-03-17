@@ -15,9 +15,9 @@ public enum Layer {
 
     SURFACE(512, 0,
             new LayerGenConfig(
-                    0.28f,   // elevated threshold – more open sky between mountain ridges
+                    0.12f,   // threshold – lower than before so the bottom of SURFACE blends toward Edge openness
                     0.0045f, // broad, sweeping mountain shapes around the abyss
-                    1.15f,   // tall terrain variation for a ring of peaks
+                    0.90f,   // amplitude – reduced to narrow the gap with THE_EDGE for smoother blending
                     520f,    // very wide opening at the surface
                     new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS},
                     null
@@ -133,7 +133,7 @@ public enum Layer {
     private final LayerRenderConfig renderConfig;
 
     /** Width of the transition blend zone in voxels (centred on each boundary). */
-    public static final int TRANSITION_SIZE = 64;
+    public static final int TRANSITION_SIZE = 192;
 
     Layer(int yStart, int yEnd, LayerGenConfig genConfig, LayerRenderConfig renderConfig) {
         this.yStart       = yStart;
