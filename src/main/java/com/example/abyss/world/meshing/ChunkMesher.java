@@ -1,6 +1,7 @@
 package com.example.abyss.world.meshing;
 
 import com.badlogic.gdx.graphics.Color;
+import com.example.abyss.world.ChunkFaceConnectivity;
 import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.VoxelChunk;
 import com.example.abyss.world.voxel.VoxelType;
@@ -78,10 +79,15 @@ public final class ChunkMesher {
             }
         }
 
+        // Connectivity was already computed at generation time for fresh chunks.
+        // Only recompute it here when the chunk has been player-edited (isDirty),
+        // since that's the only time voxel data has changed since the last compute.
+        if (center.isDirty()) {
+            center.setFaceConnectivity(ChunkFaceConnectivity.compute(center));
+        }
         if (opaqueSections.isEmpty() && transparentSections.isEmpty()) {
             return MeshData.EMPTY;
         }
-
         return new MeshData(opaqueSections.toSections(), transparentSections.toSections());
     }
 

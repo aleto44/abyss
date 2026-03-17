@@ -14,8 +14,14 @@ import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
 import com.example.abyss.debug.viewer.FirstPersonDebugController;
 import com.example.abyss.world.AbyssWorld;
+import com.example.abyss.world.ChunkKey;
+import com.example.abyss.world.ChunkVisibilityGraph;
 import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.VoxelChunk;
+import com.example.abyss.WorldConstants;
+
+import java.util.Collections;
+import java.util.Set;
 
 /**
  * First-person debug viewer that renders streamed chunk meshes in 3D.
@@ -40,6 +46,10 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private final Matrix4 modelViewProjectionMatrix = new Matrix4();
     private final BoundingBox chunkBounds = new BoundingBox();
     private int lastCulledChunks;
+    private int lastOcclusionCulledChunks;
+
+    /** Reachable chunk set from the last visibility BFS. Rebuilt each frame. */
+    private Set<ChunkKey> visibleChunkKeys = Collections.emptySet();
     private SpriteBatch batch;
     private BitmapFont font;
     private ShaderProgram shaderProgram;
@@ -93,6 +103,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         world.getMeshCoordinator().pollCompletedMeshes();
         updateDebugInfo();
 
+        rebuildVisibilityGraph();
+
         Gdx.gl.glViewport(0, 0, Gdx.graphics.getWidth(), Gdx.graphics.getHeight());
         Gdx.gl.glClearColor(SKY_COLOR.r, SKY_COLOR.g, SKY_COLOR.b, SKY_COLOR.a);
         Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT | GL20.GL_DEPTH_BUFFER_BIT);
@@ -136,7 +148,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private void renderWorld() {
         shaderProgram.bind();
-        int culled = 0;
+        int frustumCulled = 0;
+        int occlusionCulled = 0;
 
         // --- Opaque pass ---
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
@@ -144,8 +157,12 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glDisable(GL20.GL_BLEND);
         for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
             VoxelChunk chunk = loadedChunk.chunk();
-            if (!isChunkVisible(chunk)) {
-                culled++;
+            if (!isFrustumVisible(chunk)) {
+                frustumCulled++;
+                continue;
+            }
+            if (!isConnectivityVisible(chunk)) {
+                occlusionCulled++;
                 continue;
             }
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
@@ -162,7 +179,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glDepthMask(false);
         for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
             VoxelChunk chunk = loadedChunk.chunk();
-            if (!isChunkVisible(chunk)) {
+            if (!isFrustumVisible(chunk) || !isConnectivityVisible(chunk)) {
                 continue;
             }
             modelMatrix.idt().setTranslation(chunk.getWorldX(), chunk.getWorldY(), chunk.getWorldZ());
@@ -175,14 +192,24 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
-        lastCulledChunks = culled;
+        lastCulledChunks = frustumCulled;
+        lastOcclusionCulledChunks = occlusionCulled;
     }
 
-    /**
-     * Returns {@code true} if the chunk's axis-aligned bounding box intersects
-     * the camera's view frustum. Chunks outside the frustum are skipped entirely.
-     */
-    private boolean isChunkVisible(VoxelChunk chunk) {
+    /** Rebuilds the connectivity-reachability set from the player's current chunk. */
+    private void rebuildVisibilityGraph() {
+        int playerCx = Math.floorDiv((int) camera.position.x, WorldConstants.CHUNK_SIZE);
+        int playerCy = Math.floorDiv((int) camera.position.y, WorldConstants.CHUNK_SIZE);
+        int playerCz = Math.floorDiv((int) camera.position.z, WorldConstants.CHUNK_SIZE);
+        visibleChunkKeys = ChunkVisibilityGraph.computeVisible(
+                playerCx, playerCy, playerCz,
+                STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS,
+                key -> world.getChunkManager().getChunk(key)
+        );
+    }
+
+    /** Returns {@code true} if the chunk's AABB intersects the camera frustum. */
+    private boolean isFrustumVisible(VoxelChunk chunk) {
         float wx = chunk.getWorldX();
         float wy = chunk.getWorldY();
         float wz = chunk.getWorldZ();
@@ -192,6 +219,15 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 new Vector3(wx + size, wy + size, wz + size)
         );
         return camera.frustum.boundsInFrustum(chunkBounds);
+    }
+
+    /**
+     * Returns {@code true} if the chunk is reachable from the player through
+     * open face connections (i.e. not hidden behind a solid wall).
+     */
+    private boolean isConnectivityVisible(VoxelChunk chunk) {
+        ChunkKey key = new ChunkKey(chunk.getChunkX(), chunk.getChunkY(), chunk.getChunkZ());
+        return visibleChunkKeys.contains(key);
     }
 
     private void renderMesh(Mesh mesh) {
@@ -223,7 +259,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
 
     private void updateDebugInfo() {
         debugInfo = String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d | Occlusion-culled: %d\n%s\nFPS: %d",
                 startupInfo,
                 camera.position.x,
                 camera.position.y,
@@ -235,6 +271,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 world.getChunkManager().getPendingCount(),
                 world.getChunkManager().getPendingMeshCount(),
                 lastCulledChunks,
+                lastOcclusionCulledChunks,
                 FirstPersonDebugController.getControlSummary(),
                 Gdx.graphics.getFramesPerSecond()
         );

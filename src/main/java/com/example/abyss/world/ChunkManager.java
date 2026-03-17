@@ -57,8 +57,10 @@ public class ChunkManager {
 
     private VoxelChunk buildChunk(ChunkKey key) {
         ProceduralGenerator gen = generatorLocal.get();
-        return new VoxelChunk(key.cx(), key.cy(), key.cz(),
+        VoxelChunk chunk = new VoxelChunk(key.cx(), key.cy(), key.cz(),
                 gen.generateChunk(key.cx(), key.cy(), key.cz()));
+        chunk.setFaceConnectivity(ChunkFaceConnectivity.compute(chunk));
+        return chunk;
     }
 
     private LoadedChunk createLoadedChunk(VoxelChunk chunk) {

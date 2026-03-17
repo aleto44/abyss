@@ -16,6 +16,13 @@ public class VoxelChunk {
     private final VoxelData data;
     private boolean dirty; // true when the player has modified this chunk
 
+    /**
+     * Face-connectivity bitmask computed by {@link ChunkFaceConnectivity} during meshing.
+     * Defaults to fully-open so this chunk is treated as passable by the visibility BFS
+     * until its mesh (and the connectivity scan) has been built.
+     */
+    private volatile short faceConnectivity = ChunkFaceConnectivity.FULLY_OPEN;
+
     public VoxelChunk(int cx, int cy, int cz, VoxelData data) {
         this.cx = cx;
         this.cy = cy;
@@ -64,4 +71,8 @@ public class VoxelChunk {
     public boolean isDirty() { return dirty; }
 
     public void setDirty(boolean dirty) { this.dirty = dirty; }
+
+    public short getFaceConnectivity() { return faceConnectivity; }
+
+    public void setFaceConnectivity(short faceConnectivity) { this.faceConnectivity = faceConnectivity; }
 }
