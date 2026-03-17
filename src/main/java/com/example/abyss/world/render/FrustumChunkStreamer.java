@@ -1,4 +1,4 @@
-package com.example.abyss.debug;
+package com.example.abyss.world.render;
 
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
@@ -14,14 +14,14 @@ import java.util.List;
  * <p>
  * Owns all the "when to sweep" decisions that do not belong in {@link ChunkLoader}:
  * <ul>
- *   <li>Which chunks are candidates (a box around the player).</li>
+ *   <li>Which chunks are candidates (a box around the observer).</li>
  *   <li>Which candidates are visible right now (frustum AABB test).</li>
  *   <li>When to re-sweep (chunk boundary crossing, significant camera rotation,
  *       or continuous movement above a speed threshold).</li>
  *   <li>How often to run the unload scan (throttled by a timer).</li>
  * </ul>
  * Candidates are submitted nearest-first so the generation thread pool always
- * works on the chunks the player is most likely to see first.
+ * works on the chunks the observer is most likely to see first.
  * <p>
  * {@link ChunkLoader} is used as a pure executor — it is only told which
  * specific coordinates to load or unload, with no knowledge of cameras or frustums.
@@ -35,7 +35,7 @@ public class FrustumChunkStreamer {
     private static final float UNLOAD_INTERVAL_SECONDS = 2.0f;
     /**
      * Minimum world-units-per-second of camera movement that forces a re-sweep every frame.
-     * At typical move speeds (48 u/s) the player crosses chunk boundaries slowly enough that
+     * At typical move speeds (48 u/s) the observer crosses chunk boundaries slowly enough that
      * the chunk-boundary trigger alone creates 8+ second gaps in loading. Sweeping every frame
      * while moving keeps the pipeline full.
      */
@@ -90,7 +90,7 @@ public class FrustumChunkStreamer {
         boolean playerChunkChanged = pcx != lastSweptPcx || pcy != lastSweptPcy || pcz != lastSweptPcz;
         float dot = lastSweptDirection.dot(camera.direction);
         boolean cameraRotatedSignificantly = dot < DIRECTION_CHANGE_THRESHOLD;
-        boolean playerIsMoving = isPlayerMoving(camera.position, deltaTime);
+        boolean playerIsMoving = isObserverMoving(camera.position, deltaTime);
 
         boolean shouldResweep = playerChunkChanged || cameraRotatedSignificantly || playerIsMoving;
         if (!shouldResweep) {
@@ -105,7 +105,7 @@ public class FrustumChunkStreamer {
         submitVisibleCandidatesNearestFirst(pcx, pcy, pcz, camera);
     }
 
-    private boolean isPlayerMoving(Vector3 currentPosition, float deltaTime) {
+    private boolean isObserverMoving(Vector3 currentPosition, float deltaTime) {
         boolean lastPositionKnown = !Float.isNaN(lastPosition.x);
         float prevX = lastPosition.x;
         float prevY = lastPosition.y;

@@ -29,10 +29,10 @@ public enum Layer {
 
     THE_EDGE(0, -500,
             new LayerGenConfig(
-                    0.10f,   // baseDensityThreshold – lots of solid ground
-                    0.012f,  // noiseFrequency – large, gentle hills
-                    0.6f,    // noiseAmplitude
-                    520f,    // shaftDiameter – medium shaft
+                    0.05f,   // baseDensityThreshold – denser solid baseline for thick terrain
+                    0.020f,  // noiseFrequency – higher frequency for chunkier, more varied formations
+                    0.85f,   // noiseAmplitude – more dramatic variation creates thick protruding chunks
+                    420f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
                     new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE},
                     null     // no hazard
             ),
