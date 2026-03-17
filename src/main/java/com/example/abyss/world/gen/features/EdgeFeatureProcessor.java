@@ -25,28 +25,34 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
 
     private final FastNoiseLite vegetationNoise;
     /**
-     * Low-frequency 3D noise that shapes the ceiling blend.  Matching the Edge
-     * terrain noise scale (≈0.020) keeps the transition visually consistent with
-     * the surrounding terrain rather than introducing a new, alien pattern.
+     * Low-frequency 3D noise that shapes the ceiling blend magnitude per voxel.
+     * Matching the Edge terrain noise scale (≈0.018) keeps the transition visually
+     * consistent with the surrounding terrain.
      */
     private final FastNoiseLite ceilingShapeNoise;
+    /**
+     * Very-low-frequency XZ noise that varies the effective fade depth per column.
+     * Low frequency (0.005) means depth variation forms wide sweeping regions,
+     * not rapid jitter, so thick hanging masses dissolve into Edge terrain gradually.
+     */
+    private final FastNoiseLite ceilingDepthNoise;
 
     /** Threshold above which a bush is placed. */
     private static final float BUSH_THRESHOLD = 0.40f;
     /** Higher threshold for denser bush clusters. */
     private static final float DENSE_BUSH_THRESHOLD = 0.60f;
 
-    /**
-     * Depth (in voxels below y=0) over which the ceiling density bias fades to
-     * zero.  Beyond this depth the terrain is entirely noise-driven.
-     */
-    private static final int CEILING_FADE_DEPTH = 96;
+    /** Shallowest per-column fade depth — thin lips that open up quickly. */
+    private static final int CEILING_FADE_MIN = 48;
+    /** Deepest per-column fade depth — thick hanging masses blending into Edge terrain. */
+    private static final int CEILING_FADE_MAX = 224;
+    /** Outer Y bound for the ceiling zone loop — equal to the deepest possible fade. */
+    private static final int CEILING_ZONE_HEIGHT = CEILING_FADE_MAX;
 
     /**
-     * Maximum density bias injected at y=0.  Must be large enough to push any
-     * noise-generated air voxel over the solid threshold (density > 0) near the
-     * ceiling, while the noise modulation can still keep some voxels open for a
-     * natural look even right at the top.
+     * Maximum density bias injected at y=0. Large enough to push any air voxel
+     * over the solid threshold near the ceiling; noise modulation can still keep
+     * some pockets open even right at the top.
      */
     private static final float CEILING_MAX_BIAS = 1.2f;
 
@@ -63,6 +69,12 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
         ceilingShapeNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
         ceilingShapeNoise.SetFractalOctaves(3);
         ceilingShapeNoise.SetFrequency(0.018f);
+
+        ceilingDepthNoise = new FastNoiseLite((int) (seed ^ 0x44_50_54_48L)); // "DPTH"
+        ceilingDepthNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        ceilingDepthNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        ceilingDepthNoise.SetFractalOctaves(2);
+        ceilingDepthNoise.SetFrequency(0.005f);
     }
 
     @Override
@@ -104,45 +116,58 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
 
     /**
      * Adds a depth-decaying density bias to every voxel in the ceiling zone.
-     * The bias is modulated by {@link #ceilingShapeNoise} so the solid/air
-     * boundary at the transition has the same large rolling shapes as the rest
-     * of the Edge terrain.  Smoothstep easing ensures there is no perceptible
-     * seam at the bottom of the zone.
      * <p>
-     * The shaft opening and its margin are cleared, not filled.
+     * Each XZ column gets its own effective fade depth from {@link #ceilingDepthNoise},
+     * ranging from {@link #CEILING_FADE_MIN} to {@link #CEILING_FADE_MAX}. Columns
+     * that draw a deep value stay solid for many chunks worth of depth before
+     * dissolving into open Edge terrain; shallow columns open up quickly, creating
+     * irregular rocky overhangs. Within each column the bias decays via smoothstep
+     * relative to that column's own depth, and is further modulated by
+     * {@link #ceilingShapeNoise} so the solid/air boundary traces terrain-shaped
+     * contours rather than a flat cut.
      * </p>
      */
     private void blendCeiling(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, int ceilingY) {
         int size = VoxelData.SIZE;
-        float shaftRadius   = Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
+        float shaftRadius    = Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
         float shaftFillLimit = shaftRadius + SHAFT_FILL_MARGIN;
 
-        for (int ly = 0; ly < size; ly++) {
-            int wy = worldBaseY + ly;
-            int depthBelowCeiling = ceilingY - wy;
-            boolean isInCeilingZone = depthBelowCeiling >= 0 && depthBelowCeiling < CEILING_FADE_DEPTH;
-            if (!isInCeilingZone) {
-                continue;
-            }
+        for (int lz = 0; lz < size; lz++) {
+            int wz = worldBaseZ + lz;
+            for (int lx = 0; lx < size; lx++) {
+                int wx = worldBaseX + lx;
 
-            // Smoothstep fade: 1.0 at ceiling, eases to 0.0 at CEILING_FADE_DEPTH.
-            float t = (float) depthBelowCeiling / CEILING_FADE_DEPTH;
-            float fadeWeight = 1f - (t * t * (3f - 2f * t));
+                float horizontalDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+                boolean isInsideShaft = horizontalDist <= shaftFillLimit;
 
-            for (int lz = 0; lz < size; lz++) {
-                int wz = worldBaseZ + lz;
-                for (int lx = 0; lx < size; lx++) {
-                    int wx = worldBaseX + lx;
+                // Per-column fade depth: depth noise [0,1] maps linearly to [MIN, MAX].
+                float depthSample     = ceilingDepthNoise.GetNoise(wx, wz) * 0.5f + 0.5f;
+                float columnFadeDepth = CEILING_FADE_MIN + depthSample * (CEILING_FADE_MAX - CEILING_FADE_MIN);
 
-                    float horizontalDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
-                    boolean isInsideShaft = horizontalDist <= shaftFillLimit;
+                for (int ly = 0; ly < size; ly++) {
+                    int wy = worldBaseY + ly;
+                    int depthBelowCeiling = ceilingY - wy;
+                    boolean isInCeilingZone = depthBelowCeiling >= 0 && depthBelowCeiling < CEILING_ZONE_HEIGHT;
+                    if (!isInCeilingZone) {
+                        continue;
+                    }
+
                     if (isInsideShaft) {
                         data.setType(lx, ly, lz, VoxelType.AIR);
                         data.setDensity(lx, ly, lz, Math.min(data.getDensity(lx, ly, lz), -0.2f));
                         continue;
                     }
 
-                    // Noise in [-1,1]: modulates the bias so the boundary is terrain-shaped.
+                    // Beyond this column's own fade depth the bias is zero.
+                    if (depthBelowCeiling >= columnFadeDepth) {
+                        continue;
+                    }
+
+                    // Smoothstep fade relative to this column's own depth.
+                    float t          = depthBelowCeiling / columnFadeDepth;
+                    float fadeWeight = 1f - (t * t * (3f - 2f * t));
+
+                    // Shape noise modulates magnitude so the boundary traces terrain contours.
                     float shapeSample = ceilingShapeNoise.GetNoise(wx, wy, wz);
                     float densityBias = fadeWeight * CEILING_MAX_BIAS * (0.6f + 0.4f * shapeSample);
 
@@ -164,7 +189,7 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
      * so vegetation is never placed on the ceiling itself.
      */
     private int findTopmostSolidBelowCeiling(VoxelData data, int lx, int lz, int worldBaseY, int ceilingY) {
-        int ceilingZoneBottom = ceilingY - CEILING_FADE_DEPTH;
+        int ceilingZoneBottom = ceilingY - CEILING_ZONE_HEIGHT;
         for (int ly = VoxelData.SIZE - 1; ly >= 0; ly--) {
             int wy = worldBaseY + ly;
             boolean isBelowCeilingZone = wy < ceilingZoneBottom;
