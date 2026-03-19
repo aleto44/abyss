@@ -33,10 +33,25 @@ public class ProceduralGenerator {
     private static final int SIZE = VoxelData.SIZE;
 
     private final DensityFunction densityFunction;
+    private final VoxelTypeResolver typeResolver;
     private final GenConfigResolver resolver;
 
     /** Per-layer feature processors, applied as a post-processing pass after voxel fill. */
     private final Map<Layer, LayerFeatureProcessor> featureProcessors = new EnumMap<>(Layer.class);
+
+    /**
+     * Reusable scratch cache for XZ-column noise values. Safe to reuse because
+     * {@link ProceduralGenerator} instances are stored in a {@link ThreadLocal}
+     * inside {@link com.example.abyss.world.ChunkManager} — never shared across threads.
+     */
+    private final ColumnNoiseCache columnNoiseCache = new ColumnNoiseCache();
+
+    /**
+     * Reusable scratch cache for trilinear-interpolated terrain and cave noise.
+     * Populated once per chunk at 9×9×9 grid corners; all 32,768 voxels read from it
+     * via lerp instead of calling GetNoise directly.
+     */
+    private final DensityLerpCache densityLerpCache = new DensityLerpCache();
 
 
     public ProceduralGenerator(long seed) {
@@ -46,6 +61,7 @@ public class ProceduralGenerator {
     public ProceduralGenerator(long seed, GenConfigResolver resolver) {
         this.resolver = resolver;
         densityFunction = new DensityFunction(seed);
+        typeResolver    = new VoxelTypeResolver(seed);
 
         featureProcessors.put(Layer.SURFACE,         new SurfaceFeatureProcessor(seed));
         featureProcessors.put(Layer.THE_EDGE,         new EdgeFeatureProcessor(seed));
@@ -82,8 +98,18 @@ public class ProceduralGenerator {
         int worldBaseY = chunkY * SIZE;
         int worldBaseZ = chunkZ * SIZE;
 
-        // Track the last frequency set on terrainNoise to avoid redundant calls
-        float lastFrequency = -1f;
+        // Populate the XZ column cache — replaces shaft/boundary/sqrt per voxel with a
+        // single 1024-entry sweep. Uses centre-Y config (shaftDiameter is layer-constant).
+        int centreY = worldBaseY + SIZE / 2;
+        LayerGenConfig centreConfig = resolver.resolve(centreY, Layer.forY(centreY));
+        densityFunction.populateColumnCache(worldBaseX, worldBaseZ, centreConfig, columnNoiseCache);
+        typeResolver.populateTypeJitter(worldBaseX, worldBaseZ, columnNoiseCache);
+
+        // Populate the lerp cache — samples terrain+cave noise on a 9×9×9 coarse grid.
+        // The inner voxel loop reads from this via trilinear interpolation instead of
+        // calling GetNoise, cutting terrain+cave evaluations from 32,768 to 729 per chunk.
+        densityFunction.populateLerpCache(worldBaseX, worldBaseY, worldBaseZ,
+                resolver, densityLerpCache);
 
         // Step 1–3: fill each voxel with density and type
         for (int ly = 0; ly < SIZE; ly++) {
@@ -93,23 +119,18 @@ public class ProceduralGenerator {
             Layer primaryLayer = Layer.forY(wy);
             LayerGenConfig cfg = resolver.resolve(wy, primaryLayer);
 
-            // Step 2: update terrain noise frequency only when it changes
-            float freq = cfg.noiseFrequency();
-            if (freq != lastFrequency) {
-                densityFunction.setTerrainFrequency(freq);
-                lastFrequency = freq;
-            }
-
-            // Step 3: evaluate density and assign voxel type
+            // Step 3: evaluate density and assign voxel type using both caches
             for (int lz = 0; lz < SIZE; lz++) {
                 int wz = worldBaseZ + lz;
                 for (int lx = 0; lx < SIZE; lx++) {
                     int wx = worldBaseX + lx;
 
-                    float density = densityFunction.evaluate(wx, wy, wz, cfg);
+                    float density = densityFunction.evaluateCached(
+                            columnNoiseCache, densityLerpCache, lx, ly, lz);
                     data.setDensity(lx, ly, lz, density);
 
-                    VoxelType type = densityFunction.assignType(wx, wy, wz, density, cfg, primaryLayer);
+                    VoxelType type = typeResolver.resolveCached(wx, wy, wz, density, cfg,
+                            primaryLayer, columnNoiseCache, lx, lz);
                     data.setType(lx, ly, lz, type);
                 }
             }
@@ -130,7 +151,7 @@ public class ProceduralGenerator {
     // ---------------------------------------------------------------
 
     static int getOceaniaWaterlineY() {
-        return DensityFunction.OCEANIA_WATERLINE_Y;
+        return VoxelTypeResolver.OCEANIA_WATERLINE_Y;
     }
 
     static float getAbyssBoundaryRadius() {
