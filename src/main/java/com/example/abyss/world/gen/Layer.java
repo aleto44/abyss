@@ -27,7 +27,7 @@ public enum Layer {
                     new Color[]{new Color(0.62f, 0.72f, 0.68f, 1f), new Color(0.88f, 0.90f, 0.95f, 1f)}
             )),
 
-    THE_EDGE(0, -500,
+    THE_EDGE(0, -250,
             new LayerGenConfig(
                     0.05f,   // baseDensityThreshold – denser solid baseline for thick terrain
                     0.020f,  // noiseFrequency – higher frequency for chunkier, more varied formations
@@ -41,7 +41,7 @@ public enum Layer {
                     new Color[]{new Color(0.35f, 0.75f, 0.3f, 1f), new Color(0.55f, 0.45f, 0.25f, 1f)}
             )),
 
-    FOREST_DEPTHS(-500, -1500,
+    FOREST_DEPTHS(-250, -1500,
             new LayerGenConfig(
                     0.28f,   // raised threshold – dense solid terrain with cave corridors
                     0.009f,  // lower frequency – wide cave-friendly formations

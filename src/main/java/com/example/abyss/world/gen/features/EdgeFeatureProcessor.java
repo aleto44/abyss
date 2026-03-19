@@ -7,196 +7,152 @@ import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
- * Feature processor for The Edge layer.
+ * Generates the mostly-solid vertical abyss wall for The Edge layer.
  * <p>
- * Two passes are applied:
+ * Implements the three spec steps in order:
  * <ol>
- *   <li><b>Ceiling blend</b> — near y=0 a density bias is added on top of the
- *       existing noise-generated density, pushing terrain solid where it connects
- *       to the Surface floor.  The bias is shaped by a low-frequency 3D noise so
- *       it fades out with the same large, rolling forms the rest of the Edge uses
- *       rather than a flat or stippled cut-off.</li>
- *   <li><b>Vegetation</b> — places grass tufts and bush clusters on the topmost
- *       solid voxel of each XZ column below the ceiling zone.</li>
+ *   <li>Determine wall position — radial void radius, tapered slightly inward with depth
+ *       to give the crater a natural conical profile.</li>
+ *   <li>Solid fill with jagged inner face — every voxel defaults to solid; only the band
+ *       immediately adjacent to the exposed wall face is perturbed with very-low-amplitude
+ *       3D FBm noise to create subtle irregularity.</li>
+ *   <li>Central void carve — everything within the effective void radius (plus a gentle
+ *       Perlin jitter for non-circular irregularity) is carved to air.</li>
  * </ol>
+ * No vegetation, ceiling blend, or traversable features — all deprecated.
  * </p>
  */
 public class EdgeFeatureProcessor implements LayerFeatureProcessor {
 
-    private final FastNoiseLite vegetationNoise;
-    /**
-     * Low-frequency 3D noise that shapes the ceiling blend magnitude per voxel.
-     * Matching the Edge terrain noise scale (≈0.018) keeps the transition visually
-     * consistent with the surrounding terrain.
-     */
-    private final FastNoiseLite ceilingShapeNoise;
-    /**
-     * Very-low-frequency XZ noise that varies the effective fade depth per column.
-     * Low frequency (0.005) means depth variation forms wide sweeping regions,
-     * not rapid jitter, so thick hanging masses dissolve into Edge terrain gradually.
-     */
-    private final FastNoiseLite ceilingDepthNoise;
-
-    /** Threshold above which a bush is placed. */
-    private static final float BUSH_THRESHOLD = 0.40f;
-    /** Higher threshold for denser bush clusters. */
-    private static final float DENSE_BUSH_THRESHOLD = 0.60f;
-
-    /** Shallowest per-column fade depth — thin lips that open up quickly. */
-    private static final int CEILING_FADE_MIN = 48;
-    /** Deepest per-column fade depth — thick hanging masses blending into Edge terrain. */
-    private static final int CEILING_FADE_MAX = 224;
-    /** Outer Y bound for the ceiling zone loop — equal to the deepest possible fade. */
-    private static final int CEILING_ZONE_HEIGHT = CEILING_FADE_MAX;
+    // ---------------------------------------------------------------
+    // Wall geometry constants
+    // ---------------------------------------------------------------
 
     /**
-     * Maximum density bias injected at y=0. Large enough to push any air voxel
-     * over the solid threshold near the ceiling; noise modulation can still keep
-     * some pockets open even right at the top.
+     * Radius of the open void at the top of the Edge layer (y = 0).
+     * Derived from The Edge's shaft diameter so this always matches the shaft
+     * carved by the density function.
      */
-    private static final float CEILING_MAX_BIAS = 1.2f;
+    private static final float VOID_RADIUS_AT_SURFACE =
+            Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
 
-    /** Margin beyond the shaft radius where ceiling fill is suppressed. */
-    private static final float SHAFT_FILL_MARGIN = 30f;
+    /**
+     * How much the void radius widens per 1000 depth-units below the Edge top.
+     * A positive value means the hole gets slightly larger as you descend,
+     * giving the crater a natural inward-tapering (conical) appearance.
+     */
+    private static final float TAPER_PER_1000_DEPTH = 0.10f;
+
+    /**
+     * Maximum XZ perturbation (in voxels) applied to voxels inside the inner-face
+     * band.  Spec says 2–6 voxels; 4 sits comfortably in the middle.
+     */
+    private static final float WALL_PERTURB_AMPLITUDE = 4f;
+
+    /**
+     * How many voxels inward from the void boundary counts as the "inner face band".
+     * Only voxels within this band have wall-surface jitter applied.
+     */
+    private static final float INNER_FACE_BAND = 20f;
+
+    /**
+     * Amplitude of the large-scale Perlin jitter applied to the void edge.
+     * Spec says 8–20 voxels; 14 gives a noticeable but not excessive irregularity.
+     */
+    private static final float VOID_JITTER_AMPLITUDE = 14f;
+
+    // ---------------------------------------------------------------
+    // Noise
+    // ---------------------------------------------------------------
+
+    /**
+     * Very low frequency 3D FBm used to perturb the exposed inner wall face.
+     * Low frequency (0.003) means deviations form broad sweeping bumps, not chaotic
+     * pocking, consistent with the spec's "subtle jaggedness" intent.
+     */
+    private final FastNoiseLite wallPerturbNoise;
+
+    /**
+     * Low frequency 2D noise used to jitter the void edge so the central opening
+     * is irregular rather than a perfect circle.
+     */
+    private final FastNoiseLite voidJitterNoise;
 
     public EdgeFeatureProcessor(long seed) {
-        vegetationNoise = new FastNoiseLite((int) (seed ^ 0x45_44_47_45L)); // "EDGE"
-        vegetationNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        vegetationNoise.SetFrequency(0.08f);
+        wallPerturbNoise = new FastNoiseLite((int) (seed ^ 0x574C_5052L)); // "WLPR"
+        wallPerturbNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        wallPerturbNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        wallPerturbNoise.SetFractalOctaves(2);
+        wallPerturbNoise.SetFrequency(0.003f);
 
-        ceilingShapeNoise = new FastNoiseLite((int) (seed ^ 0x43_4C_47_00L)); // "CLG\0"
-        ceilingShapeNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        ceilingShapeNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
-        ceilingShapeNoise.SetFractalOctaves(3);
-        ceilingShapeNoise.SetFrequency(0.018f);
-
-        ceilingDepthNoise = new FastNoiseLite((int) (seed ^ 0x44_50_54_48L)); // "DPTH"
-        ceilingDepthNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        ceilingDepthNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
-        ceilingDepthNoise.SetFractalOctaves(2);
-        ceilingDepthNoise.SetFrequency(0.005f);
+        voidJitterNoise = new FastNoiseLite((int) (seed ^ 0x564A_5452L)); // "VJTR"
+        voidJitterNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        voidJitterNoise.SetFrequency(0.007f);
     }
+
+    // ---------------------------------------------------------------
+    // Process
+    // ---------------------------------------------------------------
 
     @Override
     public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ) {
         int size = VoxelData.SIZE;
-        int ceilingY = Layer.THE_EDGE.getYStart(); // == 0
+        int edgeTop    = Layer.THE_EDGE.getYStart(); // == 0  (inclusive upper bound)
+        int edgeBottom = Layer.THE_EDGE.getYEnd();   // == -500 (exclusive lower bound)
 
-        blendCeiling(data, worldBaseX, worldBaseY, worldBaseZ, ceilingY);
+        for (int ly = 0; ly < size; ly++) {
+            int wy = worldBaseY + ly;
 
-        for (int lz = 0; lz < size; lz++) {
-            int wz = worldBaseZ + lz;
-            for (int lx = 0; lx < size; lx++) {
-                int wx = worldBaseX + lx;
-
-                float n = vegetationNoise.GetNoise(wx, wz);
-                if (n < BUSH_THRESHOLD) {
-                    continue;
-                }
-
-                int surfaceY = findTopmostSolidBelowCeiling(data, lx, lz, worldBaseY, ceilingY);
-                if (surfaceY < 0 || surfaceY + 1 >= size) {
-                    continue;
-                }
-                if (data.getType(lx, surfaceY + 1, lz) != VoxelType.AIR) {
-                    continue;
-                }
-
-                data.setType(lx, surfaceY + 1, lz, VoxelType.GRASS);
-                data.setDensity(lx, surfaceY + 1, lz, 0.2f);
-
-                if (n > DENSE_BUSH_THRESHOLD && surfaceY + 2 < size
-                        && data.getType(lx, surfaceY + 2, lz) == VoxelType.AIR) {
-                    data.setType(lx, surfaceY + 2, lz, VoxelType.VINE);
-                    data.setDensity(lx, surfaceY + 2, lz, 0.15f);
-                }
+            // Only process voxels that actually belong to the Edge layer.
+            boolean isInEdgeLayer = wy <= edgeTop && wy > edgeBottom;
+            if (!isInEdgeLayer) {
+                continue;
             }
-        }
-    }
 
-    /**
-     * Adds a depth-decaying density bias to every voxel in the ceiling zone.
-     * <p>
-     * Each XZ column gets its own effective fade depth from {@link #ceilingDepthNoise},
-     * ranging from {@link #CEILING_FADE_MIN} to {@link #CEILING_FADE_MAX}. Columns
-     * that draw a deep value stay solid for many chunks worth of depth before
-     * dissolving into open Edge terrain; shallow columns open up quickly, creating
-     * irregular rocky overhangs. Within each column the bias decays via smoothstep
-     * relative to that column's own depth, and is further modulated by
-     * {@link #ceilingShapeNoise} so the solid/air boundary traces terrain-shaped
-     * contours rather than a flat cut.
-     * </p>
-     */
-    private void blendCeiling(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, int ceilingY) {
-        int size = VoxelData.SIZE;
-        float shaftRadius    = Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
-        float shaftFillLimit = shaftRadius + SHAFT_FILL_MARGIN;
+            // Step 1 — effective void radius at this depth.
+            // Depth below the top of the Edge layer (y = 0) in thousands of voxels.
+            float depthBelow      = (float) (Layer.THE_EDGE.getYStart() - wy);
+            float depthFactor     = depthBelow / 1000f;
+            float effectiveRadius = VOID_RADIUS_AT_SURFACE + depthFactor * TAPER_PER_1000_DEPTH
+                                    * VOID_RADIUS_AT_SURFACE;
 
-        for (int lz = 0; lz < size; lz++) {
-            int wz = worldBaseZ + lz;
-            for (int lx = 0; lx < size; lx++) {
-                int wx = worldBaseX + lx;
+            for (int lz = 0; lz < size; lz++) {
+                int wz = worldBaseZ + lz;
+                for (int lx = 0; lx < size; lx++) {
+                    int wx = worldBaseX + lx;
 
-                float horizontalDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
-                boolean isInsideShaft = horizontalDist <= shaftFillLimit;
+                    float radialDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
 
-                // Per-column fade depth: depth noise [0,1] maps linearly to [MIN, MAX].
-                float depthSample     = ceilingDepthNoise.GetNoise(wx, wz) * 0.5f + 0.5f;
-                float columnFadeDepth = CEILING_FADE_MIN + depthSample * (CEILING_FADE_MAX - CEILING_FADE_MIN);
-
-                for (int ly = 0; ly < size; ly++) {
-                    int wy = worldBaseY + ly;
-                    int depthBelowCeiling = ceilingY - wy;
-                    boolean isInCeilingZone = depthBelowCeiling >= 0 && depthBelowCeiling < CEILING_ZONE_HEIGHT;
-                    if (!isInCeilingZone) {
-                        continue;
-                    }
-
-                    if (isInsideShaft) {
+                    // Step 3 — void carve (checked first to avoid wasting work on wall logic).
+                    // Gentle XZ Perlin jitter makes the edge non-circular.
+                    float voidJitter      = voidJitterNoise.GetNoise(wx, wz) * VOID_JITTER_AMPLITUDE;
+                    float jitteredRadius  = effectiveRadius + voidJitter;
+                    boolean isInVoid      = radialDist < jitteredRadius;
+                    if (isInVoid) {
                         data.setType(lx, ly, lz, VoxelType.AIR);
                         data.setDensity(lx, ly, lz, Math.min(data.getDensity(lx, ly, lz), -0.2f));
                         continue;
                     }
 
-                    // Beyond this column's own fade depth the bias is zero.
-                    if (depthBelowCeiling >= columnFadeDepth) {
-                        continue;
+                    // Step 2 — solid fill with optional inner-face perturbation.
+                    float distanceBeyondVoid = radialDist - jitteredRadius;
+                    boolean isInInnerFaceBand = distanceBeyondVoid <= INNER_FACE_BAND;
+                    if (isInInnerFaceBand) {
+                        float perturb    = wallPerturbNoise.GetNoise(wx, wy, wz) * WALL_PERTURB_AMPLITUDE;
+                        boolean carvedByPerturb = (radialDist + perturb) < jitteredRadius;
+                        if (carvedByPerturb) {
+                            data.setType(lx, ly, lz, VoxelType.AIR);
+                            data.setDensity(lx, ly, lz, Math.min(data.getDensity(lx, ly, lz), -0.2f));
+                            continue;
+                        }
                     }
 
-                    // Smoothstep fade relative to this column's own depth.
-                    float t          = depthBelowCeiling / columnFadeDepth;
-                    float fadeWeight = 1f - (t * t * (3f - 2f * t));
-
-                    // Shape noise modulates magnitude so the boundary traces terrain contours.
-                    float shapeSample = ceilingShapeNoise.GetNoise(wx, wy, wz);
-                    float densityBias = fadeWeight * CEILING_MAX_BIAS * (0.6f + 0.4f * shapeSample);
-
-                    float existingDensity = data.getDensity(lx, ly, lz);
-                    float newDensity      = existingDensity + densityBias;
-                    data.setDensity(lx, ly, lz, newDensity);
-
-                    boolean becomesSolid = newDensity > 0f && !data.getType(lx, ly, lz).isSolid();
-                    if (becomesSolid) {
-                        data.setType(lx, ly, lz, VoxelType.STONE);
+                    data.setType(lx, ly, lz, VoxelType.STONE);
+                    if (data.getDensity(lx, ly, lz) <= 0f) {
+                        data.setDensity(lx, ly, lz, 0.50f);
                     }
                 }
             }
         }
-    }
-
-    /**
-     * Finds the topmost solid voxel in a column that sits below the ceiling zone,
-     * so vegetation is never placed on the ceiling itself.
-     */
-    private int findTopmostSolidBelowCeiling(VoxelData data, int lx, int lz, int worldBaseY, int ceilingY) {
-        int ceilingZoneBottom = ceilingY - CEILING_ZONE_HEIGHT;
-        for (int ly = VoxelData.SIZE - 1; ly >= 0; ly--) {
-            int wy = worldBaseY + ly;
-            boolean isBelowCeilingZone = wy < ceilingZoneBottom;
-            if (isBelowCeilingZone && data.getType(lx, ly, lz).isSolid()) {
-                return ly;
-            }
-        }
-        return -1;
     }
 }

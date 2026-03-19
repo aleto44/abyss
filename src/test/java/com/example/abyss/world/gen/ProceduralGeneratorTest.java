@@ -106,6 +106,88 @@ class ProceduralGeneratorTest {
         }
     }
 
+    // ---------------------------------------------------------------
+    // Surface ring & Edge wall tests
+    // ---------------------------------------------------------------
+
+    @Test
+    void edgeCenterChunkIsMostlyAir() {
+        ProceduralGenerator generator = new ProceduralGenerator(555L);
+        // A chunk at (0, 0, 0) in THE_EDGE Y range sits dead-centre of the abyss void.
+        int edgeWorldY = Layer.THE_EDGE.getYStart() - VoxelData.SIZE / 2;
+        VoxelData chunk = generator.generateChunk(0, Math.floorDiv(edgeWorldY, VoxelData.SIZE), 0);
+
+        int totalVoxels = VoxelData.SIZE * VoxelData.SIZE * VoxelData.SIZE;
+        int airCount = 0;
+        for (int y = 0; y < VoxelData.SIZE; y++) {
+            for (int z = 0; z < VoxelData.SIZE; z++) {
+                for (int x = 0; x < VoxelData.SIZE; x++) {
+                    boolean isAir = !chunk.getType(x, y, z).isSolid();
+                    if (isAir) {
+                        airCount++;
+                    }
+                }
+            }
+        }
+
+        float airRatio = (float) airCount / totalVoxels;
+        assertTrue(airRatio > 0.80f,
+                "Centre of THE_EDGE should be >80% air (void carve). Got: " + airRatio);
+    }
+
+    @Test
+    void edgeOuterWallChunkIsMostlySolid() {
+        ProceduralGenerator generator = new ProceduralGenerator(555L);
+        // A chunk well outside the void radius — the wall should be almost entirely solid.
+        float wallRadius = Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
+        int wallChunkX = (int) ((wallRadius + 200f) / VoxelData.SIZE);
+        int edgeWorldY = Layer.THE_EDGE.getYStart() - VoxelData.SIZE / 2;
+        VoxelData chunk = generator.generateChunk(wallChunkX, Math.floorDiv(edgeWorldY, VoxelData.SIZE), 0);
+
+        int totalVoxels = VoxelData.SIZE * VoxelData.SIZE * VoxelData.SIZE;
+        int solidCount = 0;
+        for (int y = 0; y < VoxelData.SIZE; y++) {
+            for (int z = 0; z < VoxelData.SIZE; z++) {
+                for (int x = 0; x < VoxelData.SIZE; x++) {
+                    if (chunk.getType(x, y, z).isSolid()) {
+                        solidCount++;
+                    }
+                }
+            }
+        }
+
+        float solidRatio = (float) solidCount / totalVoxels;
+        assertTrue(solidRatio > 0.80f,
+                "Outer wall of THE_EDGE should be >80% solid. Got: " + solidRatio);
+    }
+
+    @Test
+    void surfaceRingChunkHasSolidVoxelsAboveLayerFloor() {
+        ProceduralGenerator generator = new ProceduralGenerator(555L);
+        // A chunk at the ring's peak radius should have mountains rising above the layer floor.
+        int peakChunkX = (int) (600f / VoxelData.SIZE); // RING_PEAK_RADIUS
+        // Y chunk just above the SURFACE layer floor so we see the mountain tops.
+        int floorWorldY = Layer.SURFACE.getYEnd();
+        int chunkY = Math.floorDiv(floorWorldY + VoxelData.SIZE, VoxelData.SIZE);
+        VoxelData chunk = generator.generateChunk(peakChunkX, chunkY, 0);
+
+        boolean hasSolid = false;
+        outer:
+        for (int y = 0; y < VoxelData.SIZE; y++) {
+            for (int z = 0; z < VoxelData.SIZE; z++) {
+                for (int x = 0; x < VoxelData.SIZE; x++) {
+                    if (chunk.getType(x, y, z).isSolid()) {
+                        hasSolid = true;
+                        break outer;
+                    }
+                }
+            }
+        }
+
+        assertTrue(hasSolid,
+                "Surface ring chunk at peak radius should contain solid mountain voxels above the layer floor.");
+    }
+
     private static List<String> collectChunkSignature(ProceduralGenerator generator) {
         VoxelData chunk = generator.generateChunk(6, -44, 4);
         List<String> signature = new ArrayList<>();
