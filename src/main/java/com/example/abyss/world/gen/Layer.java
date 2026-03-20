@@ -18,7 +18,7 @@ public enum Layer {
                     0.12f,   // threshold – lower than before so the bottom of SURFACE blends toward Edge openness
                     0.0045f, // broad, sweeping mountain shapes around the abyss
                     0.90f,   // amplitude – reduced to narrow the gap with THE_EDGE for smoother blending
-                    520f,    // very wide opening at the surface
+                    600f,    // very wide opening at the surface
                     new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS},
                     null
             ),
@@ -32,7 +32,7 @@ public enum Layer {
                     0.05f,   // baseDensityThreshold – denser solid baseline for thick terrain
                     0.020f,  // noiseFrequency – higher frequency for chunkier, more varied formations
                     0.85f,   // noiseAmplitude – more dramatic variation creates thick protruding chunks
-                    420f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
+                    650f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
                     new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE},
                     null     // no hazard
             ),
