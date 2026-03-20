@@ -45,7 +45,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * Lower → ring is narrow and drops off quickly past the peaks.
      * Higher → ring has a long, gradual outer slope; terrain stays elevated farther out.
      */
-    private static final float RING_OUTER_RADIUS  = 1400f;
+    private static final float RING_OUTER_RADIUS  = 1000f;
 
     /**
      * Hard cap on mountain height, in voxels above the layer floor.

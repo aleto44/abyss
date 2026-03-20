@@ -61,6 +61,21 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
      */
     private static final float VOID_JITTER_AMPLITUDE = 14f;
 
+    /**
+     * How many voxels below y=0 the rim erosion effect is active.
+     * Lower → crumbled lip is shallower, transition is more abrupt.
+     * Higher → eroded look extends further down the wall before fading out.
+     */
+    private static final float RIM_EROSION_DEPTH = 50f;
+
+    /**
+     * Maximum extra void radius (voxels) the erosion can eat into the wall at y=0.
+     * Lower → subtle lip weathering only.
+     * Higher → wall is chewed back more aggressively at the top.
+     * Keep well below RING_INNER_RADIUS (320) to avoid eating into the mountain foothills.
+     */
+    private static final float RIM_EROSION_AMPLITUDE = 20f;
+
     // ---------------------------------------------------------------
     // Noise
     // ---------------------------------------------------------------
@@ -78,6 +93,13 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
      */
     private final FastNoiseLite voidJitterNoise;
 
+    /**
+     * Low-frequency 3D FBm that varies the rim erosion around the circumference.
+     * Produces broad irregular bays rather than a uniform ring of widening.
+     * Frequency (0.005): lower → wider bays; higher → more frequent smaller notches.
+     */
+    private final FastNoiseLite rimErosionNoise;
+
     public EdgeFeatureProcessor(long seed) {
         wallPerturbNoise = new FastNoiseLite((int) (seed ^ 0x574C_5052L)); // "WLPR"
         wallPerturbNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
@@ -88,6 +110,12 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
         voidJitterNoise = new FastNoiseLite((int) (seed ^ 0x564A_5452L)); // "VJTR"
         voidJitterNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         voidJitterNoise.SetFrequency(0.007f);
+
+        rimErosionNoise = new FastNoiseLite((int) (seed ^ 0x524D_4552L)); // "RMER"
+        rimErosionNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        rimErosionNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        rimErosionNoise.SetFractalOctaves(3);
+        rimErosionNoise.SetFrequency(0.005f);
     }
 
     // ---------------------------------------------------------------
@@ -116,6 +144,9 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
             float effectiveRadius = VOID_RADIUS_AT_SURFACE + depthFactor * TAPER_PER_1000_DEPTH
                                     * VOID_RADIUS_AT_SURFACE;
 
+            // Rim erosion: strongest at y=0, fades smoothly to zero at y=-RIM_EROSION_DEPTH.
+            float rimErosionFactor = 1f - smoothstep(0f, RIM_EROSION_DEPTH, depthBelow);
+
             for (int lz = 0; lz < size; lz++) {
                 int wz = worldBaseZ + lz;
                 for (int lx = 0; lx < size; lx++) {
@@ -125,9 +156,13 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
 
                     // Step 3 — void carve (checked first to avoid wasting work on wall logic).
                     // Gentle XZ Perlin jitter makes the edge non-circular.
-                    float voidJitter      = voidJitterNoise.GetNoise(wx, wz) * VOID_JITTER_AMPLITUDE;
-                    float jitteredRadius  = effectiveRadius + voidJitter;
-                    boolean isInVoid      = radialDist < jitteredRadius;
+                    // Near y=0, rim erosion noise eats further into the wall to mimic weathering.
+                    float voidJitter     = voidJitterNoise.GetNoise(wx, wz) * VOID_JITTER_AMPLITUDE;
+                    float erosionSample  = rimErosionNoise.GetNoise(wx, wy, wz) * 0.5f + 0.5f; // 0..1
+                    float rimErosion     = erosionSample * RIM_EROSION_AMPLITUDE * rimErosionFactor;
+                    float jitteredRadius = effectiveRadius + voidJitter + rimErosion;
+
+                    boolean isInVoid = radialDist < jitteredRadius;
                     if (isInVoid) {
                         data.setType(lx, ly, lz, VoxelType.AIR);
                         data.setDensity(lx, ly, lz, Math.min(data.getDensity(lx, ly, lz), -0.2f));
@@ -135,10 +170,10 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
                     }
 
                     // Step 2 — solid fill with optional inner-face perturbation.
-                    float distanceBeyondVoid = radialDist - jitteredRadius;
+                    float distanceBeyondVoid  = radialDist - jitteredRadius;
                     boolean isInInnerFaceBand = distanceBeyondVoid <= INNER_FACE_BAND;
                     if (isInInnerFaceBand) {
-                        float perturb    = wallPerturbNoise.GetNoise(wx, wy, wz) * WALL_PERTURB_AMPLITUDE;
+                        float perturb           = wallPerturbNoise.GetNoise(wx, wy, wz) * WALL_PERTURB_AMPLITUDE;
                         boolean carvedByPerturb = (radialDist + perturb) < jitteredRadius;
                         if (carvedByPerturb) {
                             data.setType(lx, ly, lz, VoxelType.AIR);
@@ -154,5 +189,15 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
                 }
             }
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Utilities
+    // ---------------------------------------------------------------
+
+    /** Standard smoothstep: 0 when x ≤ edge0, 1 when x ≥ edge1, smooth curve between. */
+    private static float smoothstep(float edge0, float edge1, float x) {
+        float t = Math.max(0f, Math.min(1f, (x - edge0) / (edge1 - edge0)));
+        return t * t * (3f - 2f * t);
     }
 }
