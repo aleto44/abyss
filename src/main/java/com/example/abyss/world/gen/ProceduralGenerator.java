@@ -140,7 +140,7 @@ public class ProceduralGenerator {
         Layer chunkCenterLayer = Layer.forY(worldBaseY + SIZE / 2);
         LayerFeatureProcessor processor = featureProcessors.get(chunkCenterLayer);
         if (processor != null) {
-            processor.process(data, worldBaseX, worldBaseY, worldBaseZ);
+            processor.process(data, worldBaseX, worldBaseY, worldBaseZ, resolver);
         }
 
         return data;

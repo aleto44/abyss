@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
@@ -27,14 +28,6 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
     // ---------------------------------------------------------------
     // Wall geometry constants
     // ---------------------------------------------------------------
-
-    /**
-     * Radius of the open void at the top of the Edge layer (y = 0).
-     * Derived from The Edge's shaft diameter so this always matches the shaft
-     * carved by the density function.
-     */
-    private static final float VOID_RADIUS_AT_SURFACE =
-            Layer.THE_EDGE.getGenConfig().shaftDiameter() * 0.5f;
 
     /**
      * How much the void radius widens per 1000 depth-units below the Edge top.
@@ -123,10 +116,13 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
     // ---------------------------------------------------------------
 
     @Override
-    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ) {
+    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, GenConfigResolver resolver) {
         int size = VoxelData.SIZE;
-        int edgeTop    = Layer.THE_EDGE.getYStart(); // == 0  (inclusive upper bound)
-        int edgeBottom = Layer.THE_EDGE.getYEnd();   // == -500 (exclusive lower bound)
+        int edgeTop    = Layer.THE_EDGE.getYStart();
+        int edgeBottom = Layer.THE_EDGE.getYEnd();
+
+        // Resolve shaft diameter via the resolver so debug overrides are respected.
+        float voidRadiusAtSurface = resolver.resolve(edgeTop, Layer.THE_EDGE).shaftDiameter() * 0.5f;
 
         for (int ly = 0; ly < size; ly++) {
             int wy = worldBaseY + ly;
@@ -141,8 +137,8 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
             // Depth below the top of the Edge layer (y = 0) in thousands of voxels.
             float depthBelow      = (float) (Layer.THE_EDGE.getYStart() - wy);
             float depthFactor     = depthBelow / 1000f;
-            float effectiveRadius = VOID_RADIUS_AT_SURFACE + depthFactor * TAPER_PER_1000_DEPTH
-                                    * VOID_RADIUS_AT_SURFACE;
+            float effectiveRadius = voidRadiusAtSurface + depthFactor * TAPER_PER_1000_DEPTH
+                                    * voidRadiusAtSurface;
 
             // Rim erosion: strongest at y=0, fades smoothly to zero at y=-RIM_EROSION_DEPTH.
             float rimErosionFactor = 1f - smoothstep(0f, RIM_EROSION_DEPTH, depthBelow);

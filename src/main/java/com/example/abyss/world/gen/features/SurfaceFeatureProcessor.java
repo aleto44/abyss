@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
@@ -27,10 +28,12 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
     /**
      * Radial distance (voxels from world origin) at which the mountain ring begins to rise.
-     * Lower → ring starts closer to the shaft opening, making the flat inner zone smaller.
-     * Higher → pushes the foothills outward, widening the flat area around the shaft.
+     * Also serves as INNER_SLOPE_END — the point where the inner slope finishes and terrain
+     * reaches full height, feeding naturally into the ring foothills.
+     * Lower → ring starts closer to the shaft, smaller flat zone; must stay > INNER_SLOPE_START.
+     * Higher → wider flat zone between the shaft lip and the ring base.
      */
-    private static final float RING_INNER_RADIUS = 320f;
+    private static final float RING_INNER_RADIUS = 380f;
 
     /**
      * Radial distance at which the ring reaches its maximum height.
@@ -72,21 +75,28 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     private static final float RIDGE_DETAIL_WEIGHT = 0.35f;
 
     /**
-     * World-space radius at which the inner slope begins (i.e., the edge of the shaft opening).
-     * Automatically derived from the shaft diameter — do not tune this directly.
-     * To change where the slope starts, adjust the shaft diameter in {@link com.example.abyss.world.gen.LayerGenConfig}.
+     * World-space radius at which the inner slope begins.
+     * <p>
+     * Computed at runtime from the resolver rather than stored as a static field, so
+     * debug overrides to {@code THE_EDGE}'s shaft diameter are respected.
+     * Formula: {@code THE_EDGE} shaft radius + {@code RIM_EROSION_AMPLITUDE_HEADROOM},
+     * keeping the slope start beyond the furthest the rim erosion can reach.
+     * </p>
+     * Lower → slope starts closer to the shaft; risk of flat ground over the void.
+     * Higher → slope starts further out, eating into the flat zone near the ring base.
      */
-    private static final float INNER_SLOPE_START =
-            Layer.SURFACE.getGenConfig().shaftDiameter() * 0.5f + 10f;
+    private static float innerSlopeStart(GenConfigResolver resolver) {
+        float edgeShaftRadius = resolver.resolve(Layer.THE_EDGE.getYStart(), Layer.THE_EDGE).shaftDiameter() * 0.5f;
+        return edgeShaftRadius + RIM_EROSION_AMPLITUDE_HEADROOM;
+    }
 
     /**
-     * World-space radius at which the inner slope finishes and terrain reaches full height.
-     * Pinned to RING_INNER_RADIUS so the ramp feeds into the mountain foothills seamlessly.
-     * Lower → shorter ramp distance; the slope up from the shaft is steeper.
-     * Higher → longer, gentler ramp from the shaft to the ring base; effectively widens
-     *           the transitional zone (must stay ≤ RING_INNER_RADIUS to avoid a flat gap).
+     * Headroom added to the Edge shaft radius when computing the inner slope start.
+     * Matches RIM_EROSION_AMPLITUDE in EdgeFeatureProcessor — keeps the slope start
+     * beyond the furthest the erosion can reach.
+     * If RIM_EROSION_AMPLITUDE changes, update this value to match.
      */
-    private static final float INNER_SLOPE_END = RING_INNER_RADIUS;
+    private static final float RIM_EROSION_AMPLITUDE_HEADROOM = 20f;
 
     // ---- Noise ----
 
@@ -122,22 +132,23 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     }
 
     @Override
-    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ) {
+    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, GenConfigResolver resolver) {
         int size = VoxelData.SIZE;
-        int layerFloor = Layer.SURFACE.getYEnd(); // == 0
+        int layerFloor = Layer.SURFACE.getYEnd();
 
-        // If this chunk sits entirely below the Surface layer floor it has nothing to do.
         boolean chunkIsEntirelyBelowSurface = (worldBaseY + size - 1) < layerFloor;
         if (chunkIsEntirelyBelowSurface) {
             return;
         }
+
+        float innerSlopeStart = innerSlopeStart(resolver);
 
         for (int lz = 0; lz < size; lz++) {
             int wz = worldBaseZ + lz;
             for (int lx = 0; lx < size; lx++) {
                 int wx = worldBaseX + lx;
 
-                int targetHeight = computeColumnHeight(wx, wz);
+                int targetHeight = computeColumnHeight(wx, wz, innerSlopeStart);
                 fillColumn(data, lx, lz, worldBaseY, targetHeight, layerFloor);
             }
         }
@@ -151,7 +162,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * Computes the world-Y height that this XZ column should be filled up to.
      * Returns a value in [Layer.SURFACE.getYEnd(), Layer.SURFACE.getYStart()].
      */
-    private int computeColumnHeight(int wx, int wz) {
+    private int computeColumnHeight(int wx, int wz, float innerSlopeStart) {
         float radialDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
 
         // Step 1 — ring-biased base height
@@ -167,13 +178,13 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         }
 
         // Step 3 — inner slope carve toward the shaft
-        float innerSlopeFactor = innerSlopeMultiplier(radialDist);
+        float innerSlopeFactor = innerSlopeMultiplier(radialDist, innerSlopeStart);
         float finalHeight      = baseHeight * innerSlopeFactor;
 
-        int heightVoxels   = Math.round(finalHeight);
-        int layerFloor     = Layer.SURFACE.getYEnd();
-        int layerCeiling   = Layer.SURFACE.getYStart();
-        int clampedHeight  = Math.max(0, Math.min(layerCeiling - layerFloor, heightVoxels));
+        int heightVoxels  = Math.round(finalHeight);
+        int layerFloor    = Layer.SURFACE.getYEnd();
+        int layerCeiling  = Layer.SURFACE.getYStart();
+        int clampedHeight = Math.max(0, Math.min(layerCeiling - layerFloor, heightVoxels));
         return layerFloor + clampedHeight;
     }
 
@@ -192,16 +203,16 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * opening and the foot of the ring.  Uses a smoothstep so the drop is smooth
      * rather than a hard cliff.
      */
-    private static float innerSlopeMultiplier(float r) {
-        boolean isInsideShaft = r <= INNER_SLOPE_START;
+    private static float innerSlopeMultiplier(float r, float innerSlopeStart) {
+        boolean isInsideShaft = r <= innerSlopeStart;
         if (isInsideShaft) {
             return 0f;
         }
-        boolean isPastSlope = r >= INNER_SLOPE_END;
+        boolean isPastSlope = r >= RING_INNER_RADIUS;
         if (isPastSlope) {
             return 1f;
         }
-        return smoothstep(INNER_SLOPE_START, INNER_SLOPE_END, r);
+        return smoothstep(innerSlopeStart, RING_INNER_RADIUS, r);
     }
 
     // ---------------------------------------------------------------

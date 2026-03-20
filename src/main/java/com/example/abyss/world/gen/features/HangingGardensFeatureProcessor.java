@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.LayerFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
@@ -30,7 +31,7 @@ public class HangingGardensFeatureProcessor implements LayerFeatureProcessor {
     }
 
     @Override
-    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ) {
+    public void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, GenConfigResolver resolver) {
         int size = VoxelData.SIZE;
 
         for (int ly = 0; ly < size; ly++) {

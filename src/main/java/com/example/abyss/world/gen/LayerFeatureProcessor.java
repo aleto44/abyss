@@ -19,6 +19,8 @@ public interface LayerFeatureProcessor {
      * @param worldBaseX world X of the chunk origin
      * @param worldBaseY world Y of the chunk origin
      * @param worldBaseZ world Z of the chunk origin
+     * @param resolver   the active config resolver — use this to read shaft diameters and
+     *                   other layer params so debug overrides are respected
      */
-    void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ);
+    void process(VoxelData data, int worldBaseX, int worldBaseY, int worldBaseZ, GenConfigResolver resolver);
 }
