@@ -25,46 +25,83 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
     // ---- Ring geometry ----
 
-    /** Radial distance at which the mountain ring begins to rise. */
+    /**
+     * Radial distance (voxels from world origin) at which the mountain ring begins to rise.
+     * Lower → ring starts closer to the shaft opening, making the flat inner zone smaller.
+     * Higher → pushes the foothills outward, widening the flat area around the shaft.
+     */
     private static final float RING_INNER_RADIUS = 320f;
-    /** Radial distance at which the ring reaches its maximum height. */
+
+    /**
+     * Radial distance at which the ring reaches its maximum height.
+     * Lower → peak band is closer to the shaft, tighter ring.
+     * Higher → peak band is pushed farther out; combine with RING_OUTER_RADIUS to keep
+     *           the ring from becoming too thin.
+     */
     private static final float RING_PEAK_RADIUS  = 650f;
-    /** Radial distance at which the ring has fully faded back to flat. */
+
+    /**
+     * Radial distance at which the ring has fully faded back to flat terrain.
+     * Lower → ring is narrow and drops off quickly past the peaks.
+     * Higher → ring has a long, gradual outer slope; terrain stays elevated farther out.
+     */
     private static final float RING_OUTER_RADIUS  = 1400f;
 
-    /** Maximum height (in voxels) that mountains add above the layer floor. */
+    /**
+     * Hard cap on mountain height, in voxels above the layer floor.
+     * Lower → shorter mountains overall; the ring feels more like rolling hills.
+     * Higher → taller, more dramatic peaks; make sure the layer ceiling has headroom.
+     */
     private static final int MAX_MOUNTAIN_HEIGHT = 350;
 
     /**
-     * ringStrength threshold above which the ridged peak detail is layered in.
-     * Keeps sharp peaks confined to the actual ring zone.
+     * Minimum ringStrength value required before ridged peak detail is applied.
+     * Range: 0.0–1.0 (ringStrength is the output of {@link #ringEnvelope}).
+     * Lower → ridged jaggedness bleeds further down the slopes and into the foothills.
+     * Higher → sharp peaks are confined to a tighter band around the ring crest.
      */
     private static final float RIDGE_DETAIL_THRESHOLD = 0.30f;
 
     /**
-     * Weight of the ridged detail relative to the base height.
-     * 0.35 adds up to 35% extra height variation at the peaks.
+     * How much extra height the ridged detail layer can add on top of the base height,
+     * expressed as a fraction of MAX_MOUNTAIN_HEIGHT.
+     * Lower → smoother, more rounded peaks (less jagged variation at the crest).
+     * Higher → more extreme height spikes at the peaks; can look very craggy.
+     * At 0.35, the ridged layer can add up to 35% extra height at full ringStrength.
      */
     private static final float RIDGE_DETAIL_WEIGHT = 0.35f;
 
     /**
-     * Where the inner slope begins — just clear of the density-function shaft edge.
-     * Derived from the Surface layer's shaft diameter so it always tracks the shaft radius.
+     * World-space radius at which the inner slope begins (i.e., the edge of the shaft opening).
+     * Automatically derived from the shaft diameter — do not tune this directly.
+     * To change where the slope starts, adjust the shaft diameter in {@link com.example.abyss.world.gen.LayerGenConfig}.
      */
     private static final float INNER_SLOPE_START =
             Layer.SURFACE.getGenConfig().shaftDiameter() * 0.5f + 10f;
 
     /**
-     * Where the inner slope ends — matches RING_INNER_RADIUS so the ramp feeds
-     * naturally into the base of the mountain ring.
+     * World-space radius at which the inner slope finishes and terrain reaches full height.
+     * Pinned to RING_INNER_RADIUS so the ramp feeds into the mountain foothills seamlessly.
+     * Lower → shorter ramp distance; the slope up from the shaft is steeper.
+     * Higher → longer, gentler ramp from the shaft to the ring base; effectively widens
+     *           the transitional zone (must stay ≤ RING_INNER_RADIUS to avoid a flat gap).
      */
     private static final float INNER_SLOPE_END = RING_INNER_RADIUS;
 
     // ---- Noise ----
 
-    /** Low-frequency FBm that defines the overall ring shape. */
+    /**
+     * Low-frequency FBm noise that drives the broad mountain shape.
+     * Frequency (0.0018): lower → bigger, smoother blobs; higher → smaller, more chaotic hills.
+     * Octaves (4): more octaves add finer detail but cost more compute.
+     */
     private final FastNoiseLite baseNoise;
-    /** High-frequency ridged noise for jagged peak detail. */
+
+    /**
+     * High-frequency ridged noise for jagged crest detail, applied only inside the ring zone.
+     * Frequency (0.012): lower → wider ridges; higher → tighter, more numerous spikes.
+     * Octaves (4): more octaves add finer crinkle detail to the ridges.
+     */
     private final FastNoiseLite ridgedPeakNoise;
 
     @SuppressWarnings("unused") // seed intentionally ignored — surface uses fixed seeds for a shared world location
@@ -75,13 +112,13 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         baseNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         baseNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
         baseNoise.SetFractalOctaves(4);
-        baseNoise.SetFrequency(0.0018f);
+        baseNoise.SetFrequency(0.0018f); // lower = larger smooth features; higher = smaller noisy bumps
 
         ridgedPeakNoise = new FastNoiseLite(0x52_49_44_47); // "RIDG"
         ridgedPeakNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         ridgedPeakNoise.SetFractalType(FastNoiseLite.FractalType.Ridged);
         ridgedPeakNoise.SetFractalOctaves(4);
-        ridgedPeakNoise.SetFrequency(0.012f);
+        ridgedPeakNoise.SetFrequency(0.002f); // lower = wider ridges; higher = tighter/more frequent spikes
     }
 
     @Override
