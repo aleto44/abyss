@@ -27,10 +27,20 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     // ---- Ring geometry ----
 
     /**
-     * Radial distance (voxels from world origin) at which the mountain ring begins to rise.
-     * Also serves as INNER_SLOPE_END — the point where the inner slope finishes and terrain
-     * reaches full height, feeding naturally into the ring foothills.
-     * Lower → ring starts closer to the shaft, smaller flat zone; must stay > INNER_SLOPE_START.
+     * Radial distance (voxels) at which the ring envelope begins to rise.
+     * This is pulled back inside the slope zone so the ring foothills already have some
+     * height while the inner slope multiplier is still ramping up — giving the slope
+     * actual terrain to carve rather than multiplying zero and producing flat ground
+     * followed by a sudden jump.
+     * Must be less than RING_INNER_RADIUS by at least the width of the slope zone.
+     */
+    private static final float RING_RISE_START = 200f;
+
+    /**
+     * Radial distance (voxels from world origin) at which the inner slope finishes and
+     * the ring foothills take over.  The ring envelope reaches full strength at RING_PEAK_RADIUS,
+     * so terrain continues rising smoothly past this point.
+     * Lower → ring inner edge closer to the shaft; smaller flat zone.
      * Higher → wider flat zone between the shaft lip and the ring base.
      */
     private static final float RING_INNER_RADIUS = 380f;
@@ -58,10 +68,10 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     private static final int MAX_MOUNTAIN_HEIGHT = 350;
 
     /**
-     * Minimum ringStrength value required before ridged peak detail is applied.
-     * Range: 0.0–1.0 (ringStrength is the output of {@link #ringEnvelope}).
-     * Lower → ridged jaggedness bleeds further down the slopes and into the foothills.
-     * Higher → sharp peaks are confined to a tighter band around the ring crest.
+     * Minimum ringStrength value at which ridged peak detail begins to blend in.
+     * Range: 0.0–1.0. Detail reaches full weight at RIDGE_DETAIL_THRESHOLD + 0.2.
+     * Lower → jaggedness starts appearing further down the slope toward the shaft.
+     * Higher → sharp crests are confined to a tighter band around the ring peak.
      */
     private static final float RIDGE_DETAIL_THRESHOLD = 0.30f;
 
@@ -75,28 +85,28 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     private static final float RIDGE_DETAIL_WEIGHT = 0.35f;
 
     /**
-     * World-space radius at which the inner slope begins.
-     * <p>
-     * Computed at runtime from the resolver rather than stored as a static field, so
-     * debug overrides to {@code THE_EDGE}'s shaft diameter are respected.
-     * Formula: {@code THE_EDGE} shaft radius + {@code RIM_EROSION_AMPLITUDE_HEADROOM},
-     * keeping the slope start beyond the furthest the rim erosion can reach.
-     * </p>
-     * Lower → slope starts closer to the shaft; risk of flat ground over the void.
-     * Higher → slope starts further out, eating into the flat zone near the ring base.
-     */
-    private static float innerSlopeStart(GenConfigResolver resolver) {
-        float edgeShaftRadius = resolver.resolve(Layer.THE_EDGE.getYStart(), Layer.THE_EDGE).shaftDiameter() * 0.5f;
-        return edgeShaftRadius + RIM_EROSION_AMPLITUDE_HEADROOM;
-    }
-
-    /**
      * Headroom added to the Edge shaft radius when computing the inner slope start.
      * Matches RIM_EROSION_AMPLITUDE in EdgeFeatureProcessor — keeps the slope start
      * beyond the furthest the erosion can reach.
      * If RIM_EROSION_AMPLITUDE changes, update this value to match.
      */
     private static final float RIM_EROSION_AMPLITUDE_HEADROOM = 20f;
+
+    /**
+     * Maximum radial distance (voxels) that the inner slope start and end boundaries
+     * can be displaced outward or inward by the slope variation noise.
+     * Lower → subtle wobble; slope boundary stays close to a perfect circle.
+     * Higher → dramatic lobes and bays; some columns stay elevated much closer to the shaft.
+     */
+    private static final float INNER_SLOPE_VARIATION_AMPLITUDE = 60f;
+
+    /**
+     * Maximum additional height (voxels) that the slope variation noise can add inside
+     * the slope zone, creating rocky knolls and ledges partway down the inner face.
+     * Lower → slope is non-circular but smooth.
+     * Higher → noticeable elevated patches and ridges on the inner slope face.
+     */
+    private static final float INNER_SLOPE_HEIGHT_BUMP = 40f;
 
     // ---- Noise ----
 
@@ -114,6 +124,16 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      */
     private final FastNoiseLite ridgedPeakNoise;
 
+    /**
+     * Medium-frequency FBm noise that breaks the circular symmetry of the inner slope.
+     * Shifts the effective slope-start and slope-end radii per-column and adds small
+     * height bumps, so the descent toward the shaft looks like real eroded terrain
+     * rather than a uniform radial ramp.
+     * Frequency (0.004): lower → broader lobes; higher → tighter, choppier variation.
+     * Octaves (3): enough detail for naturalistic variation without over-complicating the shape.
+     */
+    private final FastNoiseLite slopeVariationNoise;
+
     @SuppressWarnings("unused") // seed intentionally ignored — surface uses fixed seeds for a shared world location
     public SurfaceFeatureProcessor(long seed) {
         // Fixed seeds — the surface is a shared static world location (future town hub),
@@ -129,6 +149,17 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         ridgedPeakNoise.SetFractalType(FastNoiseLite.FractalType.Ridged);
         ridgedPeakNoise.SetFractalOctaves(4);
         ridgedPeakNoise.SetFrequency(0.002f); // lower = wider ridges; higher = tighter/more frequent spikes
+
+        slopeVariationNoise = new FastNoiseLite(0x53_4C_50_56); // "SLPV"
+        slopeVariationNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
+        slopeVariationNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
+        slopeVariationNoise.SetFractalOctaves(3);
+        slopeVariationNoise.SetFrequency(0.004f);
+    }
+
+    private static float innerSlopeStart(GenConfigResolver resolver) {
+        float edgeShaftRadius = resolver.resolve(Layer.THE_EDGE.getYStart(), Layer.THE_EDGE).shaftDiameter() * 0.5f;
+        return edgeShaftRadius + RIM_EROSION_AMPLITUDE_HEADROOM;
     }
 
     @Override
@@ -170,16 +201,27 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         float base         = (baseNoise.GetNoise(wx, wz) * 0.5f + 0.5f); // 0..1
         float baseHeight   = base * ringStrength * MAX_MOUNTAIN_HEIGHT;
 
-        // Step 2 — ridged peak detail, only inside the ring zone
-        boolean inRingZone = ringStrength > RIDGE_DETAIL_THRESHOLD;
-        if (inRingZone) {
+        // Step 2 — ridged peak detail, blended in smoothly past the threshold.
+        // smoothstep instead of a hard boolean prevents a visible height-step at the
+        // exact radius where ridgeDetail would otherwise snap on all at once.
+        float ridgeBlend = smoothstep(RIDGE_DETAIL_THRESHOLD, RIDGE_DETAIL_THRESHOLD + 0.2f, ringStrength);
+        boolean hasRidgeContribution = ridgeBlend > 0f;
+        if (hasRidgeContribution) {
             float ridgeDetail = ridgedPeakNoise.GetNoise(wx, wz) * 0.5f + 0.5f; // 0..1
-            baseHeight += ridgeDetail * ringStrength * MAX_MOUNTAIN_HEIGHT * RIDGE_DETAIL_WEIGHT;
+            baseHeight += ridgeDetail * ringStrength * MAX_MOUNTAIN_HEIGHT * RIDGE_DETAIL_WEIGHT * ridgeBlend;
         }
 
-        // Step 3 — inner slope carve toward the shaft
-        float innerSlopeFactor = innerSlopeMultiplier(radialDist, innerSlopeStart);
-        float finalHeight      = baseHeight * innerSlopeFactor;
+        // Step 3 — inner slope carve toward the shaft, with per-column variation to
+        // break the perfect circular symmetry of the slope boundary.
+        float slopeVariation   = slopeVariationNoise.GetNoise(wx, wz);                    // -1..1
+        float slopeBumpNoise   = slopeVariationNoise.GetNoise(wx * 1.7f, wz * 1.7f);     // -1..1, uncorrelated detail
+        float variedSlopeStart = innerSlopeStart + slopeVariation * INNER_SLOPE_VARIATION_AMPLITUDE;
+        float variedSlopeEnd   = RING_INNER_RADIUS + slopeVariation * (INNER_SLOPE_VARIATION_AMPLITUDE * 0.5f);
+        float innerSlopeFactor = innerSlopeMultiplier(radialDist, variedSlopeStart, variedSlopeEnd);
+        // Height bump peaks mid-slope and fades to zero at either end of the transition zone.
+        float slopeZoneWeight  = 1f - Math.abs(innerSlopeFactor - 0.5f) * 2f;
+        float heightBump       = (slopeBumpNoise * 0.5f + 0.5f) * slopeZoneWeight * INNER_SLOPE_HEIGHT_BUMP;
+        float finalHeight      = baseHeight * innerSlopeFactor + heightBump;
 
         int heightVoxels  = Math.round(finalHeight);
         int layerFloor    = Layer.SURFACE.getYEnd();
@@ -189,30 +231,32 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     }
 
     /**
-     * Radial envelope that shapes heights into a ring: 0 inside the shaft, rises
-     * smoothly to 1 at the peak radius, then fades back to 0 at the outer edge.
+     * Radial envelope that shapes heights into a ring: 0 near the shaft, rises
+     * smoothly from RING_RISE_START to full strength at RING_PEAK_RADIUS, then
+     * fades back to 0 at the outer edge. Rising earlier than RING_INNER_RADIUS
+     * ensures the slope zone has real base height to carve into rather than zero.
      */
     private static float ringEnvelope(float r) {
-        float rise = smoothstep(RING_INNER_RADIUS, RING_PEAK_RADIUS, r);
-        float fade = smoothstep(RING_PEAK_RADIUS,  RING_OUTER_RADIUS, r);
+        float rise = smoothstep(RING_RISE_START, RING_PEAK_RADIUS, r);
+        float fade = smoothstep(RING_PEAK_RADIUS, RING_OUTER_RADIUS, r);
         return rise * (1f - fade);
     }
 
     /**
      * Multiplier in [0..1] that carves the steep inner slope between the shaft
-     * opening and the foot of the ring.  Uses a smoothstep so the drop is smooth
-     * rather than a hard cliff.
+     * opening and the foot of the ring. Both boundary radii are passed in so
+     * callers can perturb them per-column for naturalistic variation.
      */
-    private static float innerSlopeMultiplier(float r, float innerSlopeStart) {
-        boolean isInsideShaft = r <= innerSlopeStart;
+    private static float innerSlopeMultiplier(float r, float slopeStart, float slopeEnd) {
+        boolean isInsideShaft = r <= slopeStart;
         if (isInsideShaft) {
             return 0f;
         }
-        boolean isPastSlope = r >= RING_INNER_RADIUS;
+        boolean isPastSlope = r >= slopeEnd;
         if (isPastSlope) {
             return 1f;
         }
-        return smoothstep(innerSlopeStart, RING_INNER_RADIUS, r);
+        return smoothstep(slopeStart, slopeEnd, r);
     }
 
     // ---------------------------------------------------------------
