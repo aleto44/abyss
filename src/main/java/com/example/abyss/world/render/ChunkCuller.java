@@ -8,13 +8,6 @@ import com.example.abyss.world.VoxelChunk;
 /**
  * Determines which chunks should be rendered from a given camera position
  * using frustum culling.
- * <p>
- * Connectivity (occlusion) culling has been removed. It was only effective in
- * the SURFACE and THE_EDGE layers where solid terrain is thick enough to block
- * large volumes. In every deeper layer the BFS floods nearly the entire loaded
- * set, spending significant CPU to cull fewer than ~100 chunks — not worth the
- * cost, especially with a large vertical load radius.
- * </p>
  */
 public class ChunkCuller {
 
