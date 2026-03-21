@@ -100,15 +100,15 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
         wallPerturbNoise.SetFractalOctaves(2);
         wallPerturbNoise.SetFrequency(0.003f);
 
-        voidJitterNoise = new FastNoiseLite((int) (seed ^ 0x564A_5452L)); // "VJTR"
+        voidJitterNoise = new FastNoiseLite((int) (seed ^ EdgeVoidGeometry.VOID_JITTER_SEED_XOR));
         voidJitterNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
-        voidJitterNoise.SetFrequency(0.007f);
+        voidJitterNoise.SetFrequency(EdgeVoidGeometry.VOID_JITTER_FREQUENCY);
 
-        rimErosionNoise = new FastNoiseLite((int) (seed ^ 0x524D_4552L)); // "RMER"
+        rimErosionNoise = new FastNoiseLite((int) (seed ^ EdgeVoidGeometry.RIM_EROSION_SEED_XOR));
         rimErosionNoise.SetNoiseType(FastNoiseLite.NoiseType.OpenSimplex2);
         rimErosionNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
-        rimErosionNoise.SetFractalOctaves(3);
-        rimErosionNoise.SetFrequency(0.005f);
+        rimErosionNoise.SetFractalOctaves(EdgeVoidGeometry.RIM_EROSION_OCTAVES);
+        rimErosionNoise.SetFrequency(EdgeVoidGeometry.RIM_EROSION_FREQUENCY);
     }
 
     // ---------------------------------------------------------------

@@ -43,7 +43,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * Lower → ring inner edge closer to the shaft; smaller flat zone.
      * Higher → wider flat zone between the shaft lip and the ring base.
      */
-    private static final float RING_INNER_RADIUS = 380f;
+    static final float RING_INNER_RADIUS = 380f;
 
     /**
      * Radial distance at which the ring reaches its maximum height.
@@ -88,17 +88,18 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * Headroom added to the Edge shaft radius when computing the inner slope start.
      * Matches RIM_EROSION_AMPLITUDE in EdgeFeatureProcessor — keeps the slope start
      * beyond the furthest the erosion can reach.
-     * If RIM_EROSION_AMPLITUDE changes, update this value to match.
+     * <p>Package-private so {@link AbyssRimProcessor} can compute the correct outer trim cap.</p>
      */
-    private static final float RIM_EROSION_AMPLITUDE_HEADROOM = 20f;
+    static final float RIM_EROSION_AMPLITUDE_HEADROOM = 20f;
 
     /**
      * Maximum radial distance (voxels) that the inner slope start and end boundaries
      * can be displaced outward or inward by the slope variation noise.
      * Lower → subtle wobble; slope boundary stays close to a perfect circle.
      * Higher → dramatic lobes and bays; some columns stay elevated much closer to the shaft.
+     * <p>Package-private so {@link AbyssRimProcessor} can derive the trim outer boundary.</p>
      */
-    private static final float INNER_SLOPE_VARIATION_AMPLITUDE = 60f;
+    static final float INNER_SLOPE_VARIATION_AMPLITUDE = 60f;
 
     /**
      * Maximum additional height (voxels) that the slope variation noise can add inside

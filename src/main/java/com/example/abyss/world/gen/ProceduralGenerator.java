@@ -1,5 +1,6 @@
 package com.example.abyss.world.gen;
 
+import com.example.abyss.world.gen.features.AbyssRimProcessor;
 import com.example.abyss.world.gen.features.DeepExtremesFeatureProcessor;
 import com.example.abyss.world.gen.features.EdgeFeatureProcessor;
 import com.example.abyss.world.gen.features.ForestFeatureProcessor;
@@ -11,7 +12,9 @@ import com.example.abyss.world.gen.features.SurfaceFeatureProcessor;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
 
+import java.util.ArrayList;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -40,6 +43,13 @@ public class ProceduralGenerator {
     private final Map<Layer, LayerFeatureProcessor> featureProcessors = new EnumMap<>(Layer.class);
 
     /**
+     * Cross-boundary processors, applied after all layer-specific processors.
+     * Each entry declares its own operating bounds via {@link LayerTransitionFeatureProcessor#shouldProcess}
+     * so only processors relevant to a given chunk do any work.
+     */
+    private final List<LayerTransitionFeatureProcessor> transitionProcessors = new ArrayList<>();
+
+    /**
      * Reusable scratch cache for XZ-column noise values. Safe to reuse because
      * {@link ProceduralGenerator} instances are stored in a {@link ThreadLocal}
      * inside {@link com.example.abyss.world.ChunkManager} — never shared across threads.
@@ -63,14 +73,16 @@ public class ProceduralGenerator {
         densityFunction = new DensityFunction(seed);
         typeResolver    = new VoxelTypeResolver(seed);
 
-        featureProcessors.put(Layer.SURFACE,         new SurfaceFeatureProcessor(seed));
-        featureProcessors.put(Layer.THE_EDGE,         new EdgeFeatureProcessor(seed));
-        featureProcessors.put(Layer.FOREST_DEPTHS,    new ForestFeatureProcessor(seed));
-        featureProcessors.put(Layer.HANGING_GARDENS,  new HangingGardensFeatureProcessor(seed));
-        featureProcessors.put(Layer.SKY_WALLS,        new SkyWallsFeatureProcessor(seed));
-        featureProcessors.put(Layer.MYCELIUM,         new MyceliumFeatureProcessor(seed));
-        featureProcessors.put(Layer.OCEANIA,          new OceaniaFeatureProcessor(seed));
-        featureProcessors.put(Layer.DEEP_EXTREMES,    new DeepExtremesFeatureProcessor(seed));
+        featureProcessors.put(Layer.SURFACE,        new SurfaceFeatureProcessor(seed));
+        featureProcessors.put(Layer.THE_EDGE,        new EdgeFeatureProcessor(seed));
+        featureProcessors.put(Layer.FOREST_DEPTHS,   new ForestFeatureProcessor(seed));
+        featureProcessors.put(Layer.HANGING_GARDENS, new HangingGardensFeatureProcessor(seed));
+        featureProcessors.put(Layer.SKY_WALLS,       new SkyWallsFeatureProcessor(seed));
+        featureProcessors.put(Layer.MYCELIUM,        new MyceliumFeatureProcessor(seed));
+        featureProcessors.put(Layer.OCEANIA,         new OceaniaFeatureProcessor(seed));
+        featureProcessors.put(Layer.DEEP_EXTREMES,   new DeepExtremesFeatureProcessor(seed));
+
+        transitionProcessors.add(new AbyssRimProcessor(seed));
     }
 
     /**
@@ -141,6 +153,15 @@ public class ProceduralGenerator {
         LayerFeatureProcessor processor = featureProcessors.get(chunkCenterLayer);
         if (processor != null) {
             processor.process(data, worldBaseX, worldBaseY, worldBaseZ, resolver);
+        }
+
+        // Step 5: apply cross-boundary transition processors that declare they have work
+        // to do for this chunk — each processor gates itself via shouldProcess.
+        for (LayerTransitionFeatureProcessor transitionProcessor : transitionProcessors) {
+            boolean shouldRun = transitionProcessor.shouldProcess(worldBaseX, worldBaseY, worldBaseZ, resolver);
+            if (shouldRun) {
+                transitionProcessor.process(data, worldBaseX, worldBaseY, worldBaseZ, resolver);
+            }
         }
 
         return data;
