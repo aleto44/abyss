@@ -89,29 +89,7 @@ public class CylinderChunkStreamer {
      * and periodically evicts chunks outside the keep zone.
      */
     public void update(PerspectiveCamera camera, float deltaTime) {
-        SweepOutcome sweepOutcome = sweepCylinderChunks(camera, deltaTime);
-        UnloadOutcome unloadOutcome = maybeUnloadDistantChunks(camera, deltaTime);
-        lastStats = new StreamerStats(
-                sweepOutcome.reason(),
-                sweepOutcome.sweepTriggered(),
-                sweepOutcome.playerChunkChanged(),
-                sweepOutcome.playerMoving(),
-                sweepOutcome.movementSweepReady(),
-                sweepOutcome.idleResweepReady(),
-                sweepOutcome.candidatesConsidered(),
-                sweepOutcome.submitted(),
-                sweepOutcome.skippedKnown(),
-                sweepOutcome.budgetExhausted(),
-                unloadOutcome.scanTriggered(),
-                unloadOutcome.unloadedChunkCount(),
-                unloadOutcome.cancelledPendingCount(),
-                totalSweepCount,
-                totalSubmittedCount,
-                totalSkippedKnownCount,
-                totalUnloadScanCount,
-                totalUnloadedChunkCount,
-                totalCancelledPendingCount
-        );
+        updateForPosition(camera.position, deltaTime);
     }
 
     public StreamerStats getLastStats() {
@@ -121,7 +99,11 @@ public class CylinderChunkStreamer {
     void updateForPosition(Vector3 observerPosition, float deltaTime) {
         SweepOutcome sweepOutcome = sweepCylinderChunks(observerPosition, deltaTime);
         UnloadOutcome unloadOutcome = maybeUnloadDistantChunks(observerPosition, deltaTime);
-        lastStats = new StreamerStats(
+        lastStats = buildStats(sweepOutcome, unloadOutcome);
+    }
+
+    private StreamerStats buildStats(SweepOutcome sweepOutcome, UnloadOutcome unloadOutcome) {
+        return new StreamerStats(
                 sweepOutcome.reason(),
                 sweepOutcome.sweepTriggered(),
                 sweepOutcome.playerChunkChanged(),
@@ -141,57 +123,6 @@ public class CylinderChunkStreamer {
                 totalUnloadScanCount,
                 totalUnloadedChunkCount,
                 totalCancelledPendingCount
-        );
-    }
-
-    private SweepOutcome sweepCylinderChunks(PerspectiveCamera camera, float deltaTime) {
-        int worldX = Math.round(camera.position.x);
-        int worldY = Math.round(camera.position.y);
-        int worldZ = Math.round(camera.position.z);
-
-        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
-        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
-        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
-
-        boolean playerChunkChanged = pcx != lastSweptPcx || pcy != lastSweptPcy || pcz != lastSweptPcz;
-        boolean playerMoving = isObserverMoving(camera.position, deltaTime);
-
-        movementSweepTimer += deltaTime;
-        idleResweepTimer += deltaTime;
-        boolean movementSweepReady = movementSweepTimer >= MOVEMENT_SWEEP_INTERVAL_SECONDS;
-        boolean idleResweepReady = idleResweepTimer >= IDLE_RESWEEP_INTERVAL_SECONDS;
-
-        SweepReason sweepReason = determineSweepReason(
-                playerChunkChanged,
-                playerMoving,
-                movementSweepReady,
-                idleResweepReady
-        );
-        boolean shouldResweep = sweepReason != SweepReason.NONE;
-        if (!shouldResweep) {
-            return SweepOutcome.notTriggered(playerChunkChanged, playerMoving, movementSweepReady, idleResweepReady);
-        }
-
-        movementSweepTimer = 0f;
-        idleResweepTimer = 0f;
-        lastSweptPcx = pcx;
-        lastSweptPcy = pcy;
-        lastSweptPcz = pcz;
-
-        SubmissionStats submissionStats = submitCylinderCandidatesNearestFirst(pcx, pcy, pcz, camera.position);
-        totalSweepCount++;
-        totalSubmittedCount += submissionStats.submitted();
-        totalSkippedKnownCount += submissionStats.skippedKnown();
-        return SweepOutcome.triggered(
-                sweepReason,
-                playerChunkChanged,
-                playerMoving,
-                movementSweepReady,
-                idleResweepReady,
-                submissionStats.candidatesConsidered(),
-                submissionStats.submitted(),
-                submissionStats.skippedKnown(),
-                submissionStats.budgetExhausted()
         );
     }
 
@@ -244,6 +175,40 @@ public class CylinderChunkStreamer {
                 submissionStats.skippedKnown(),
                 submissionStats.budgetExhausted()
         );
+    }
+
+    private UnloadOutcome maybeUnloadDistantChunks(Vector3 observerPosition, float deltaTime) {
+        unloadTimer += deltaTime;
+        boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
+        if (!isTimeToUnload) {
+            return UnloadOutcome.notTriggered();
+        }
+        unloadTimer = 0f;
+
+        int worldX = Math.round(observerPosition.x);
+        int worldY = Math.round(observerPosition.y);
+        int worldZ = Math.round(observerPosition.z);
+        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
+        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
+        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
+
+        ChunkLoader.UnloadStats unloadStats = chunkLoader.unloadChunks(key -> {
+            int dx = Math.abs(key.cx() - pcx);
+            int dz = Math.abs(key.cz() - pcz);
+            boolean isOutsideHorizontal = dx > hRadius + 1 || dz > hRadius + 1;
+            if (isOutsideHorizontal) {
+                return true;
+            }
+
+            int rawDy = key.cy() - pcy;
+            boolean isTooFarAbove = rawDy > V_KEEP_ABOVE;
+            boolean isTooFarBelow = rawDy < -vRadius;
+            return isTooFarAbove || isTooFarBelow;
+        });
+        totalUnloadScanCount++;
+        totalUnloadedChunkCount += unloadStats.unloadedChunkCount();
+        totalCancelledPendingCount += unloadStats.cancelledPendingCount();
+        return UnloadOutcome.triggered(unloadStats.unloadedChunkCount(), unloadStats.cancelledPendingCount());
     }
 
     private SweepReason determineSweepReason(
@@ -330,74 +295,6 @@ public class CylinderChunkStreamer {
             }
         }
         return new SubmissionStats(candidatesConsidered, submitted, skippedKnown, budgetExhausted);
-    }
-
-    private UnloadOutcome maybeUnloadDistantChunks(PerspectiveCamera camera, float deltaTime) {
-        unloadTimer += deltaTime;
-        boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
-        if (!isTimeToUnload) {
-            return UnloadOutcome.notTriggered();
-        }
-        unloadTimer = 0f;
-
-        int worldX = Math.round(camera.position.x);
-        int worldY = Math.round(camera.position.y);
-        int worldZ = Math.round(camera.position.z);
-        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
-        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
-        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
-
-        com.example.abyss.world.ChunkLoader.UnloadStats unloadStats = chunkLoader.unloadChunks(key -> {
-            int dx = Math.abs(key.cx() - pcx);
-            int dz = Math.abs(key.cz() - pcz);
-            boolean isOutsideHorizontal = dx > hRadius + 1 || dz > hRadius + 1;
-            if (isOutsideHorizontal) {
-                return true;
-            }
-
-            int rawDy = key.cy() - pcy;
-            boolean isTooFarAbove = rawDy > V_KEEP_ABOVE;
-            boolean isTooFarBelow = rawDy < -vRadius;
-            return isTooFarAbove || isTooFarBelow;
-        });
-        totalUnloadScanCount++;
-        totalUnloadedChunkCount += unloadStats.unloadedChunkCount();
-        totalCancelledPendingCount += unloadStats.cancelledPendingCount();
-        return UnloadOutcome.triggered(unloadStats.unloadedChunkCount(), unloadStats.cancelledPendingCount());
-    }
-
-    private UnloadOutcome maybeUnloadDistantChunks(Vector3 observerPosition, float deltaTime) {
-        unloadTimer += deltaTime;
-        boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
-        if (!isTimeToUnload) {
-            return UnloadOutcome.notTriggered();
-        }
-        unloadTimer = 0f;
-
-        int worldX = Math.round(observerPosition.x);
-        int worldY = Math.round(observerPosition.y);
-        int worldZ = Math.round(observerPosition.z);
-        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
-        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
-        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
-
-        com.example.abyss.world.ChunkLoader.UnloadStats unloadStats = chunkLoader.unloadChunks(key -> {
-            int dx = Math.abs(key.cx() - pcx);
-            int dz = Math.abs(key.cz() - pcz);
-            boolean isOutsideHorizontal = dx > hRadius + 1 || dz > hRadius + 1;
-            if (isOutsideHorizontal) {
-                return true;
-            }
-
-            int rawDy = key.cy() - pcy;
-            boolean isTooFarAbove = rawDy > V_KEEP_ABOVE;
-            boolean isTooFarBelow = rawDy < -vRadius;
-            return isTooFarAbove || isTooFarBelow;
-        });
-        totalUnloadScanCount++;
-        totalUnloadedChunkCount += unloadStats.unloadedChunkCount();
-        totalCancelledPendingCount += unloadStats.cancelledPendingCount();
-        return UnloadOutcome.triggered(unloadStats.unloadedChunkCount(), unloadStats.cancelledPendingCount());
     }
 
     public enum SweepReason {
