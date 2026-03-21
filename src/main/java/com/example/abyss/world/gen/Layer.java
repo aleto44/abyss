@@ -19,8 +19,7 @@ public enum Layer {
                     0.0045f, // broad, sweeping mountain shapes around the abyss
                     0.90f,   // amplitude – reduced to narrow the gap with THE_EDGE for smoother blending
                     600f,    // very wide opening at the surface
-                    new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS},
-                    null
+                    new VoxelType[]{VoxelType.STONE, VoxelType.DIRT, VoxelType.GRASS}
             ),
             new LayerRenderConfig(
                     320f,    // brightest, clearest layer
@@ -33,8 +32,7 @@ public enum Layer {
                     0.020f,  // noiseFrequency – higher frequency for chunkier, more varied formations
                     0.85f,   // noiseAmplitude – more dramatic variation creates thick protruding chunks
                     650f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
-                    new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE},
-                    null     // no hazard
+                    new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE}
             ),
             new LayerRenderConfig(
                     256f,    // visibility – clear
@@ -47,8 +45,7 @@ public enum Layer {
                     0.009f,  // lower frequency – wide cave-friendly formations
                     0.7f,
                     180f,
-                    new VoxelType[]{VoxelType.WOOD, VoxelType.VINE, VoxelType.DIRT, VoxelType.STONE},
-                    null
+                    new VoxelType[]{VoxelType.WOOD, VoxelType.VINE, VoxelType.DIRT, VoxelType.STONE}
             ),
             new LayerRenderConfig(
                     192f,
@@ -61,8 +58,7 @@ public enum Layer {
                     0.010f,  // lower frequency – large platform-scale formations
                     0.75f,   // amplitude – dramatic but not fully disconnected
                     250f,    // wider shaft through floating islands
-                    new VoxelType[]{VoxelType.STONE, VoxelType.VINE, VoxelType.GRASS},
-                    null
+                    new VoxelType[]{VoxelType.STONE, VoxelType.VINE, VoxelType.GRASS}
             ),
             new LayerRenderConfig(
                     220f,
@@ -75,8 +71,7 @@ public enum Layer {
                     0.008f,  // low frequency – giant wall features
                     0.5f,
                     400f,    // very wide shaft in the open air
-                    new VoxelType[]{VoxelType.STONE, VoxelType.OBSIDIAN},
-                    null
+                    new VoxelType[]{VoxelType.STONE, VoxelType.OBSIDIAN}
             ),
             new LayerRenderConfig(
                     512f,    // huge visibility – can see far across the void
@@ -89,8 +84,7 @@ public enum Layer {
                     0.025f,  // high frequency – fine organic detail
                     0.65f,
                     120f,    // narrow shaft – claustrophobic
-                    new VoxelType[]{VoxelType.MUSHROOM, VoxelType.DIRT, VoxelType.STONE},
-                    VoxelType.TOXIC_GAS  // spore clouds
+                    new VoxelType[]{VoxelType.MUSHROOM, VoxelType.DIRT, VoxelType.STONE}
             ),
             new LayerRenderConfig(
                     64f,     // very low visibility
@@ -103,8 +97,7 @@ public enum Layer {
                     0.010f,  // low frequency – large ocean features
                     0.4f,
                     350f,    // wide shaft through the ocean
-                    new VoxelType[]{VoxelType.CORAL, VoxelType.STONE, VoxelType.DIRT},
-                    null
+                    new VoxelType[]{VoxelType.CORAL, VoxelType.STONE, VoxelType.DIRT}
             ),
             new LayerRenderConfig(
                     128f,    // murky underwater
@@ -117,8 +110,7 @@ public enum Layer {
                     0.008f,  // lower frequency – large chaotic passages
                     0.85f,   // high amplitude – chaotic terrain
                     150f,    // narrow, dangerous shaft
-                    new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL, VoxelType.STONE},
-                    VoxelType.TOXIC_GAS
+                    new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL, VoxelType.STONE}
             ),
             new LayerRenderConfig(
                     48f,     // near-zero visibility

@@ -16,15 +16,13 @@ import com.example.abyss.world.voxel.VoxelType;
  * @param noiseAmplitude       scales noise output (higher → more dramatic variation)
  * @param shaftDiameter        diameter of the main shaft in voxels for this layer
  * @param dominantVoxelTypes   primary voxel types assigned to solid voxels (picked via secondary noise)
- * @param hazardType           optional hazardous voxel type placed in pockets ({@code null} if none)
  */
 public record LayerGenConfig(
         float baseDensityThreshold,
         float noiseFrequency,
         float noiseAmplitude,
         float shaftDiameter,
-        VoxelType[] dominantVoxelTypes,
-        VoxelType hazardType
+        VoxelType[] dominantVoxelTypes
 ) {
 
     /**
@@ -43,10 +41,9 @@ public record LayerGenConfig(
         float amplitude = a.noiseAmplitude       * invT + b.noiseAmplitude       * t;
         float shaft     = a.shaftDiameter        * invT + b.shaftDiameter        * t;
 
-        boolean useB = t > 0.5f;
+        boolean useB       = t > 0.5f;
         VoxelType[] types  = useB ? b.dominantVoxelTypes : a.dominantVoxelTypes;
-        VoxelType   hazard = useB ? b.hazardType         : a.hazardType;
 
-        return new LayerGenConfig(threshold, frequency, amplitude, shaft, types, hazard);
+        return new LayerGenConfig(threshold, frequency, amplitude, shaft, types);
     }
 }

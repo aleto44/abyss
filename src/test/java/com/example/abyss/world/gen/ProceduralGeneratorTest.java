@@ -9,7 +9,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -46,22 +45,6 @@ class ProceduralGeneratorTest {
 
         assertEquals(Layer.OCEANIA, Layer.forY(worldY));
         assertTrue(hasTypeOnWorldY(chunk, worldY, VoxelType.WATER));
-    }
-
-    @Test
-    void hazardPocketsOnlyAppearInConfiguredHazardLayers() {
-        ProceduralGenerator generator = new ProceduralGenerator(456L);
-
-        VoxelData myceliumChunk = generator.generateChunk(0, Math.floorDiv(-4200, VoxelData.SIZE), 0);
-        VoxelData deepChunk = generator.generateChunk(0, Math.floorDiv(-6200, VoxelData.SIZE), 0);
-
-        assertTrue(hasTypeOnWorldY(myceliumChunk, -4200, VoxelType.TOXIC_GAS));
-        assertTrue(hasTypeOnWorldY(deepChunk, -6200, VoxelType.TOXIC_GAS));
-
-        for (int worldY : new int[]{-200, -1000, -2200, -3000, -4700}) {
-            VoxelData chunk = generator.generateChunk(0, Math.floorDiv(worldY, VoxelData.SIZE), 0);
-            assertFalse(hasTypeOnWorldY(chunk, worldY, VoxelType.TOXIC_GAS), "Unexpected hazard at y=" + worldY);
-        }
     }
 
     @Test

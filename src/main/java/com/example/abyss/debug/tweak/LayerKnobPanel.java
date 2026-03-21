@@ -121,8 +121,7 @@ class LayerKnobPanel extends JPanel {
                 frequency,
                 amplitude,
                 shaftDia,
-                current.dominantVoxelTypes(),
-                current.hazardType()
+                current.dominantVoxelTypes()
         );
         overrides.setConfig(layer, updated);
     }

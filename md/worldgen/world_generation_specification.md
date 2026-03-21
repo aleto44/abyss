@@ -62,7 +62,6 @@ This document provides a detailed specification for the world generation system 
     - Meshing: Marching cubes isosurface extraction from the density field. See world_generation_like_cube_world.md for implementation details.
 - **Physics and Interactions**: Voxels affect gameplay:
     - Collapses: Unstable structures fall if support removed.
-    - Hazards: Layer-specific (e.g., gas pockets in Deep Extremes, drowning zones in Oceania).
 
 ## Procedural Generation Process
 - **Seed**: Use a `long` seed for reproducibility across runs/multiplayer. All noise instances derive from this seed.

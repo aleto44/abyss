@@ -14,8 +14,7 @@ class LayerGenConfigTest {
             0.02f,
             0.60f,
             120f,
-            new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT},
-            null
+            new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT}
     );
 
     private static final LayerGenConfig DEEP = new LayerGenConfig(
@@ -23,8 +22,7 @@ class LayerGenConfigTest {
             0.06f,
             0.90f,
             220f,
-            new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL},
-            VoxelType.TOXIC_GAS
+            new VoxelType[]{VoxelType.OBSIDIAN, VoxelType.CRYSTAL}
     );
 
     @Test
@@ -34,11 +32,9 @@ class LayerGenConfigTest {
 
         assertEquivalentNumericFields(SHALLOW, atZero);
         assertSame(SHALLOW.dominantVoxelTypes(), atZero.dominantVoxelTypes());
-        assertSame(SHALLOW.hazardType(), atZero.hazardType());
 
         assertEquivalentNumericFields(DEEP, atOne);
         assertSame(DEEP.dominantVoxelTypes(), atOne.dominantVoxelTypes());
-        assertSame(DEEP.hazardType(), atOne.hazardType());
     }
 
     @Test
@@ -59,10 +55,8 @@ class LayerGenConfigTest {
         LayerGenConfig afterHalf  = LayerGenConfig.lerp(SHALLOW, DEEP, 0.51f);
 
         assertSame(SHALLOW.dominantVoxelTypes(), beforeHalf.dominantVoxelTypes());
-        assertSame(SHALLOW.hazardType(), beforeHalf.hazardType());
 
         assertSame(DEEP.dominantVoxelTypes(), afterHalf.dominantVoxelTypes());
-        assertSame(DEEP.hazardType(), afterHalf.hazardType());
     }
 
     private static void assertEquivalentNumericFields(LayerGenConfig expected, LayerGenConfig actual) {

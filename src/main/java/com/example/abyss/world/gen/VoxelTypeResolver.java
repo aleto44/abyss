@@ -11,10 +11,9 @@ import com.example.abyss.world.voxel.VoxelType;
  *   <li>Solid voxels → shell-band type selection via {@code typeNoise} jitter</li>
  *   <li>Air voxels in the SURFACE layer beyond the abyss boundary → WATER (surface ocean)</li>
  *   <li>Air voxels in OCEANIA below the waterline → WATER</li>
- *   <li>Air voxels with high {@code hazardNoise} → the layer's hazard type</li>
  *   <li>Everything else → AIR</li>
  * </ul>
- * It owns {@code typeNoise} and {@code hazardNoise} and all shell-depth / hazard constants.
+ * It owns {@code typeNoise} and all shell-depth constants.
  * It has no knowledge of the density formula — that lives in {@link DensityFunction}.
  * </p>
  */
@@ -26,7 +25,6 @@ public class VoxelTypeResolver {
 
     static final float SURFACE_SHELL_DEPTH = 0.35f;
     static final float MID_SHELL_DEPTH     = 0.75f;
-    static final float HAZARD_THRESHOLD    = 0.55f;
     static final int   OCEANIA_WATERLINE_Y = -4600;
     static final int   SURFACE_SEA_LEVEL_Y = 48;
 
@@ -35,15 +33,13 @@ public class VoxelTypeResolver {
     // ---------------------------------------------------------------
 
     private final FastNoiseLite typeNoise;
-    private final FastNoiseLite hazardNoise;
 
     // ---------------------------------------------------------------
     // Construction
     // ---------------------------------------------------------------
 
     public VoxelTypeResolver(long seed) {
-        typeNoise   = buildNoise((int) (seed ^ 0xDEAD_FACEL), 0.04f);
-        hazardNoise = buildNoise((int) (seed ^ 0xCAFE_BABEL), 0.03f);
+        typeNoise = buildNoise((int) (seed ^ 0xDEAD_FACEL), 0.04f);
     }
 
     // ---------------------------------------------------------------
@@ -106,11 +102,6 @@ public class VoxelTypeResolver {
             return VoxelType.WATER;
         }
 
-        VoxelType hazard = checkHazardPocket(wx, wy, wz, cfg);
-        if (hazard != null) {
-            return hazard;
-        }
-
         return VoxelType.AIR;
     }
 
@@ -143,11 +134,6 @@ public class VoxelTypeResolver {
         boolean isOceaniaWater = layer == Layer.OCEANIA && wy < OCEANIA_WATERLINE_Y;
         if (isOceaniaWater) {
             return VoxelType.WATER;
-        }
-
-        VoxelType hazard = checkHazardPocket(wx, wy, wz, cfg);
-        if (hazard != null) {
-            return hazard;
         }
 
         return VoxelType.AIR;
@@ -234,19 +220,6 @@ public class VoxelTypeResolver {
         boolean isBelowSeaLevel  = wy <= SURFACE_SEA_LEVEL_Y;
         if (isBeyondBoundary && isBelowSeaLevel) {
             return VoxelType.WATER;
-        }
-        return null;
-    }
-
-    private VoxelType checkHazardPocket(int wx, int wy, int wz, LayerGenConfig cfg) {
-        boolean hasHazard = cfg.hazardType() != null;
-        if (!hasHazard) {
-            return null;
-        }
-        float h = hazardNoise.GetNoise(wx, wy, wz);
-        boolean isHazardPocket = h > HAZARD_THRESHOLD;
-        if (isHazardPocket) {
-            return cfg.hazardType();
         }
         return null;
     }
