@@ -1,0 +1,112 @@
+package com.example.abyss.world.render;
+
+import com.badlogic.gdx.math.Vector3;
+import com.example.abyss.world.ChunkKey;
+import com.example.abyss.world.ChunkLoader;
+import org.junit.jupiter.api.Test;
+
+import java.util.function.Predicate;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class CylinderChunkStreamerTest {
+
+    @Test
+    void initialUpdateTriggersInitialSweepAndTracksSubmittedCounts() {
+        FakeChunkLoader chunkLoader = new FakeChunkLoader();
+        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+
+        Vector3 observerPosition = createOriginPosition();
+        streamer.updateForPosition(observerPosition, 0.016f);
+
+        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        assertTrue(stats.sweepTriggered());
+        assertEquals(CylinderChunkStreamer.SweepReason.INITIAL, stats.lastSweepReason());
+        assertEquals(9, stats.candidatesConsidered());
+        assertEquals(9, stats.submittedThisUpdate());
+        assertEquals(0, stats.skippedKnownThisUpdate());
+        assertEquals(1L, stats.totalSweepCount());
+        assertEquals(9L, stats.totalSubmittedCount());
+        assertEquals(0L, stats.totalSkippedKnownCount());
+    }
+
+    @Test
+    void secondIdleUpdateCountsKnownRequestsDuringIdleResweep() {
+        FakeChunkLoader chunkLoader = new FakeChunkLoader();
+        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+
+        Vector3 observerPosition = createOriginPosition();
+        streamer.updateForPosition(observerPosition, 0.016f);
+        streamer.updateForPosition(observerPosition, 0.30f);
+
+        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        assertTrue(stats.sweepTriggered());
+        assertEquals(CylinderChunkStreamer.SweepReason.IDLE_RESWEEP, stats.lastSweepReason());
+        assertEquals(9, stats.candidatesConsidered());
+        assertEquals(0, stats.submittedThisUpdate());
+        assertEquals(9, stats.skippedKnownThisUpdate());
+        assertEquals(2L, stats.totalSweepCount());
+        assertEquals(9L, stats.totalSubmittedCount());
+        assertEquals(9L, stats.totalSkippedKnownCount());
+    }
+
+    @Test
+    void unloadScanStatsReflectLoaderResultsWhenIntervalExpires() {
+        FakeChunkLoader chunkLoader = new FakeChunkLoader();
+        chunkLoader.nextUnloadStats = new ChunkLoader.UnloadStats(3, 2);
+        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 1);
+
+        Vector3 observerPosition = createOriginPosition();
+        streamer.updateForPosition(observerPosition, 0.016f);
+        streamer.updateForPosition(observerPosition, 2.1f);
+
+        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        assertTrue(stats.unloadScanTriggered());
+        assertEquals(3, stats.unloadedChunkCountThisUpdate());
+        assertEquals(2, stats.cancelledPendingCountThisUpdate());
+        assertEquals(1L, stats.totalUnloadScanCount());
+        assertEquals(3L, stats.totalUnloadedChunkCount());
+        assertEquals(2L, stats.totalCancelledPendingCount());
+    }
+
+    @Test
+    void noSweepWhenStillAndIntervalsNotReady() {
+        FakeChunkLoader chunkLoader = new FakeChunkLoader();
+        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+
+        Vector3 observerPosition = createOriginPosition();
+        streamer.updateForPosition(observerPosition, 0.016f);
+        streamer.updateForPosition(observerPosition, 0.01f);
+
+        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        assertFalse(stats.sweepTriggered());
+        assertEquals(CylinderChunkStreamer.SweepReason.NONE, stats.lastSweepReason());
+        assertEquals(0, stats.submittedThisUpdate());
+        assertEquals(0, stats.skippedKnownThisUpdate());
+    }
+
+    private static Vector3 createOriginPosition() {
+        return new Vector3(0f, 0f, 0f);
+    }
+
+    private static final class FakeChunkLoader extends ChunkLoader {
+        private ChunkLoader.UnloadStats nextUnloadStats = new ChunkLoader.UnloadStats(0, 0);
+        private final java.util.Set<ChunkKey> requestedKeys = new java.util.HashSet<>();
+
+        private FakeChunkLoader() {
+            super(null, null);
+        }
+
+        @Override
+        public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ) {
+            return requestedKeys.add(new ChunkKey(chunkX, chunkY, chunkZ));
+        }
+
+        @Override
+        public ChunkLoader.UnloadStats unloadChunks(Predicate<ChunkKey> shouldUnload) {
+            return nextUnloadStats;
+        }
+    }
+}

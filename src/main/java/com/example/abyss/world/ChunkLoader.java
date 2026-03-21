@@ -19,7 +19,7 @@ import java.util.function.Predicate;
  * </ul>
  * This class holds no sweep strategy, no player-position state, and no camera knowledge.
  * Callers are responsible for deciding <em>which</em> chunks to request and <em>when</em>
- * — see {@link com.example.abyss.world.render.FrustumChunkStreamer} for a frustum-based policy.
+ * — see {@link com.example.abyss.world.render.CylinderChunkStreamer} for a cylinder-based policy.
  * The synchronous {@link #loadChunksAround} method exists for init and testing only.
  * </p>
  */
@@ -107,7 +107,7 @@ public class ChunkLoader {
      *
      * @param shouldUnload returns {@code true} for any {@link ChunkKey} that must be evicted
      */
-    public void unloadChunks(Predicate<ChunkKey> shouldUnload) {
+    public UnloadStats unloadChunks(Predicate<ChunkKey> shouldUnload) {
         List<ChunkKey> toRemove = new ArrayList<>();
         for (VoxelChunk chunk : chunkManager.getLoadedChunks()) {
             ChunkKey key = new ChunkKey(chunk.getChunkX(), chunk.getChunkY(), chunk.getChunkZ());
@@ -119,12 +119,15 @@ public class ChunkLoader {
             chunkManager.unloadChunk(key.cx(), key.cy(), key.cz());
         }
 
+        int cancelledPendingCount = 0;
         Collection<ChunkKey> pendingKeys = chunkManager.getPendingChunkKeys();
         for (ChunkKey key : pendingKeys) {
             if (shouldUnload.test(key)) {
                 chunkManager.cancelPendingChunk(key.cx(), key.cy(), key.cz());
+                cancelledPendingCount++;
             }
         }
+        return new UnloadStats(toRemove.size(), cancelledPendingCount);
     }
 
     /**
@@ -167,5 +170,8 @@ public class ChunkLoader {
                 chunkManager.cancelPendingChunk(key.cx(), key.cy(), key.cz());
             }
         }
+    }
+
+    public record UnloadStats(int unloadedChunkCount, int cancelledPendingCount) {
     }
 }

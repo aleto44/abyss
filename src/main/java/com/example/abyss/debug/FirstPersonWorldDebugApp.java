@@ -17,7 +17,7 @@ import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.VoxelChunk;
 import com.example.abyss.world.render.ChunkCuller;
-import com.example.abyss.world.render.FrustumChunkStreamer;
+import com.example.abyss.world.render.CylinderChunkStreamer;
 
 /**
  * First-person debug viewer that renders streamed chunk meshes in 3D.
@@ -49,7 +49,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private PerspectiveCamera camera;
     private FirstPersonDebugController controller;
     private AbyssWorld world;
-    private FrustumChunkStreamer chunkStreamer;
+    private CylinderChunkStreamer chunkStreamer;
     private MainThreadWatchdog watchdog;
     private String startupInfo;
     private String debugInfo;
@@ -76,7 +76,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         world = new AbyssWorld(WORLD_SEED);
         world.init();
         world.getChunkLoader().loadChunksAround((int) START_POSITION.x, (int) START_POSITION.y, (int) START_POSITION.z, INITIAL_HORIZONTAL_RADIUS, INITIAL_VERTICAL_RADIUS);
-        chunkStreamer = new FrustumChunkStreamer(world.getChunkLoader(), STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
+        chunkStreamer = new CylinderChunkStreamer(world.getChunkLoader(), STREAM_HORIZONTAL_RADIUS, STREAM_VERTICAL_RADIUS);
         chunkCuller = new ChunkCuller();
 
         startupInfo = String.format(
@@ -217,8 +217,10 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     }
 
     private void updateDebugInfo() {
+        CylinderChunkStreamer.StreamerStats streamerStats = chunkStreamer.getLastStats();
+        String sweepReason = streamerStats.lastSweepReason().name();
         debugInfo = String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\n%s\nFPS: %d",
                 startupInfo,
                 camera.position.x,
                 camera.position.y,
@@ -230,6 +232,18 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 world.getChunkManager().getPendingCount(),
                 world.getChunkManager().getPendingMeshCount(),
                 lastCulledChunks,
+                sweepReason,
+                streamerStats.sweepTriggered(),
+                streamerStats.submittedThisUpdate(),
+                streamerStats.skippedKnownThisUpdate(),
+                streamerStats.budgetExhausted(),
+                streamerStats.unloadScanTriggered(),
+                streamerStats.totalSweepCount(),
+                streamerStats.totalSubmittedCount(),
+                streamerStats.totalSkippedKnownCount(),
+                streamerStats.totalUnloadScanCount(),
+                streamerStats.totalUnloadedChunkCount(),
+                streamerStats.totalCancelledPendingCount(),
                 FirstPersonDebugController.getControlSummary(),
                 Gdx.graphics.getFramesPerSecond()
         );
