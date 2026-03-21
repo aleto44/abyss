@@ -5,16 +5,14 @@ import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.VertexAttribute;
 import com.badlogic.gdx.graphics.VertexAttributes;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
+import com.example.abyss.util.BudgetedDrainQueue;
 import com.example.abyss.util.KeyedTaskQueue;
 import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.VoxelChunk;
 
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.Function;
 
 /**
@@ -42,13 +40,13 @@ public class MeshManager {
      * was exhausted in a prior frame. Stored explicitly so we never need to scan all
      * loaded chunks looking for pending data.
      */
-    private final Queue<ChunkMeshState> pendingPromotion = new ArrayDeque<>();
+    private final BudgetedDrainQueue<ChunkMeshState> promotionQueue = new BudgetedDrainQueue<>();
 
     /**
      * Meshes queued for deferred GL deletion, drained at a capped rate each frame
      * so that bulk {@code glDeleteBuffers} calls never stall the main thread.
      */
-    private final Queue<Mesh> pendingDispose = new ConcurrentLinkedQueue<>();
+    private final BudgetedDrainQueue<Mesh> disposeQueue = new BudgetedDrainQueue<>();
 
     public MeshManager() {
         this.taskQueue = KeyedTaskQueue.<ChunkKey, MeshData>builder()
@@ -93,7 +91,7 @@ public class MeshManager {
      * Uploads ({@code glBufferData}) are capped to {@link #UPLOAD_BUDGET_NANOS} and
      * deletions ({@code glDeleteBuffers}) to {@link #DISPOSAL_BUDGET_NANOS}, with
      * separate budgets so deletions never steal time from uploads.
-     * Deferred promotions from prior frames are held in {@link #pendingPromotion}
+     * Deferred promotions from prior frames are held in {@link #promotionQueue}
      * and drained before newly completed results, so the closest chunks always
      * appear first.
      * </p>
@@ -103,25 +101,20 @@ public class MeshManager {
      */
     public void pollCompleted(Function<ChunkKey, LoadedChunk> loadedChunkLookup,
                               ShaderProgram shader) {
-        drainDisposeQueue();
+        disposeQueue.drain(DISPOSAL_BUDGET_NANOS, Mesh::dispose);
 
         long uploadDeadlineNanos = System.nanoTime() + UPLOAD_BUDGET_NANOS;
 
         // Drain deferred promotions from prior frames first — these are nearest-first
         // ordered from when they were originally submitted, so closest chunks always win.
-        while (!pendingPromotion.isEmpty()) {
-            boolean budgetExhausted = System.nanoTime() >= uploadDeadlineNanos;
-            if (budgetExhausted) {
-                return;
-            }
-            ChunkMeshState renderState = pendingPromotion.poll();
+        promotionQueue.drain(uploadDeadlineNanos - System.nanoTime(), renderState -> {
             MeshData pending = renderState.getPendingMeshData();
             boolean stillPending = pending != null && !renderState.isMeshQueued();
             if (stillPending) {
                 promotePendingMesh(renderState, shader);
                 renderState.setMeshDirty(false);
             }
-        }
+        });
 
         // Then drain newly completed results from the background meshing queue.
         List<KeyedTaskQueue.Result<ChunkKey, MeshData>> results = taskQueue.pollCompleted();
@@ -137,7 +130,7 @@ public class MeshManager {
 
             boolean budgetExhausted = System.nanoTime() >= uploadDeadlineNanos;
             if (budgetExhausted) {
-                pendingPromotion.add(renderState);
+                promotionQueue.enqueue(renderState);
                 continue;
             }
             promotePendingMesh(renderState, shader);
@@ -151,8 +144,12 @@ public class MeshManager {
             return;
         }
 
-        enqueueMeshesForDisposal(renderState.getOpaqueMeshes());
-        enqueueMeshesForDisposal(renderState.getTransparentMeshes());
+        for (Mesh mesh : renderState.getOpaqueMeshes()) {
+            if (mesh != null) { disposeQueue.enqueue(mesh); }
+        }
+        for (Mesh mesh : renderState.getTransparentMeshes()) {
+            if (mesh != null) { disposeQueue.enqueue(mesh); }
+        }
 
         renderState.setOpaqueMeshes(buildMeshes(pending.opaqueSections(), shader));
         renderState.setTransparentMeshes(buildMeshes(pending.transparentSections(), shader));
@@ -168,8 +165,12 @@ public class MeshManager {
     }
 
     public void disposeChunkMeshes(ChunkMeshState renderState) {
-        enqueueMeshesForDisposal(renderState.getOpaqueMeshes());
-        enqueueMeshesForDisposal(renderState.getTransparentMeshes());
+        for (Mesh mesh : renderState.getOpaqueMeshes()) {
+            if (mesh != null) { disposeQueue.enqueue(mesh); }
+        }
+        for (Mesh mesh : renderState.getTransparentMeshes()) {
+            if (mesh != null) { disposeQueue.enqueue(mesh); }
+        }
         renderState.setOpaqueMeshes(new ArrayList<>());
         renderState.setTransparentMeshes(new ArrayList<>());
         renderState.setPendingMeshData(null);
@@ -178,11 +179,7 @@ public class MeshManager {
 
     public void shutdown() {
         taskQueue.shutdown();
-        // Drain whatever remains — no frame budget on exit.
-        Mesh mesh;
-        while ((mesh = pendingDispose.poll()) != null) {
-            mesh.dispose();
-        }
+        disposeQueue.drainAll(Mesh::dispose);
     }
 
     private static List<Mesh> buildMeshes(List<MeshSectionData> sections, ShaderProgram shader) {
@@ -226,32 +223,5 @@ public class MeshManager {
             mesh.unbind(shader);
         }
         return mesh;
-    }
-
-    /**
-     * Drains the pending-dispose queue up to {@link #DISPOSAL_BUDGET_NANOS} per frame.
-     * Uses its own budget so deletions never compete with uploads for time.
-     */
-    private void drainDisposeQueue() {
-        long disposalDeadlineNanos = System.nanoTime() + DISPOSAL_BUDGET_NANOS;
-        while (System.nanoTime() < disposalDeadlineNanos) {
-            Mesh mesh = pendingDispose.poll();
-            boolean queueEmpty = mesh == null;
-            if (queueEmpty) {
-                break;
-            }
-            mesh.dispose();
-        }
-    }
-
-    private void enqueueMeshesForDisposal(List<Mesh> meshes) {
-        if (meshes == null) {
-            return;
-        }
-        for (Mesh mesh : meshes) {
-            if (mesh != null) {
-                pendingDispose.add(mesh);
-            }
-        }
     }
 }
