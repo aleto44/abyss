@@ -25,7 +25,7 @@ public class DensityFunction {
     // ---------------------------------------------------------------
 
     /** Margin (in voxels) over which the shaft edge fades via smoothstep. */
-    static final float SHAFT_MARGIN = 30f;
+    public static final float SHAFT_MARGIN = 30f;
 
     /**
      * Nominal radius of the abyss in voxels (soft horizontal boundary).

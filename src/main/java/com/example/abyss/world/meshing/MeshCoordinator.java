@@ -1,6 +1,7 @@
 package com.example.abyss.world.meshing;
 
 import com.badlogic.gdx.graphics.Mesh;
+import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.ChunkManager;
@@ -93,8 +94,8 @@ public class MeshCoordinator {
     }
 
     /** Drains completed mesh results on the main thread. Call once per frame. */
-    public void pollCompletedMeshes() {
-        chunkManager.pollCompletedMeshes();
+    public void pollCompletedMeshes(ShaderProgram shader) {
+        chunkManager.pollCompletedMeshes(shader);
     }
 
     // ----------------------------------------------------------------

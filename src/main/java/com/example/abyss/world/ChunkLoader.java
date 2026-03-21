@@ -6,6 +6,7 @@ import com.example.abyss.world.meshing.MeshCoordinator;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Low-level executor for chunk load/unload operations.
@@ -18,7 +19,7 @@ import java.util.List;
  * </ul>
  * This class holds no sweep strategy, no player-position state, and no camera knowledge.
  * Callers are responsible for deciding <em>which</em> chunks to request and <em>when</em>
- * — see {@link com.example.abyss.debug.FrustumChunkStreamer} for a frustum-based policy.
+ * — see {@link com.example.abyss.world.render.FrustumChunkStreamer} for a frustum-based policy.
  * The synchronous {@link #loadChunksAround} method exists for init and testing only.
  * </p>
  */
@@ -40,9 +41,11 @@ public class ChunkLoader {
      * Submits a single chunk coordinate for async generation.
      * No-op if the chunk is already loaded or pending.
      * Non-blocking — the result arrives via {@link #pollCompletedChunks()}.
+     *
+     * @return {@code true} if a new generation task was submitted; {@code false} if already known
      */
-    public void requestChunkAsync(int chunkX, int chunkY, int chunkZ) {
-        chunkManager.requestChunkAsync(chunkX, chunkY, chunkZ);
+    public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ) {
+        return chunkManager.requestChunkAsync(chunkX, chunkY, chunkZ);
     }
 
     /**
@@ -90,12 +93,39 @@ public class ChunkLoader {
             }
         }
         meshCoordinator.queueDirtyMeshes();
-        meshCoordinator.pollCompletedMeshes();
+        meshCoordinator.pollCompletedMeshes(null);
     }
 
     // ----------------------------------------------------------------
     // Unloading
     // ----------------------------------------------------------------
+
+    /**
+     * Evicts every loaded chunk — and cancels every pending generation task — whose
+     * key satisfies the given predicate.  Camera-awareness, frustum tests, and any
+     * other policy logic belong in the predicate supplied by the caller.
+     *
+     * @param shouldUnload returns {@code true} for any {@link ChunkKey} that must be evicted
+     */
+    public void unloadChunks(Predicate<ChunkKey> shouldUnload) {
+        List<ChunkKey> toRemove = new ArrayList<>();
+        for (VoxelChunk chunk : chunkManager.getLoadedChunks()) {
+            ChunkKey key = new ChunkKey(chunk.getChunkX(), chunk.getChunkY(), chunk.getChunkZ());
+            if (shouldUnload.test(key)) {
+                toRemove.add(key);
+            }
+        }
+        for (ChunkKey key : toRemove) {
+            chunkManager.unloadChunk(key.cx(), key.cy(), key.cz());
+        }
+
+        Collection<ChunkKey> pendingKeys = chunkManager.getPendingChunkKeys();
+        for (ChunkKey key : pendingKeys) {
+            if (shouldUnload.test(key)) {
+                chunkManager.cancelPendingChunk(key.cx(), key.cy(), key.cz());
+            }
+        }
+    }
 
     /**
      * Unloads any loaded chunk whose chunk-space distance from the given world

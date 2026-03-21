@@ -1,5 +1,6 @@
 package com.example.abyss.world;
 
+import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.example.abyss.util.KeyedTaskQueue;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
@@ -26,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *   <li>{@link #requestChunkAsync(int, int, int)} for every chunk the player needs</li>
  *   <li>{@link #pollCompletedChunks()} to drain finished results into the loaded map</li>
  *   <li>{@link #requestChunkMesh(ChunkKey)} for meshable chunks</li>
- *   <li>{@link #pollCompletedMeshes()} to promote CPU mesh data into LibGDX meshes on the main thread</li>
+ *   <li>{@link #pollCompletedMeshes(ShaderProgram)} to promote CPU mesh data into LibGDX meshes on the main thread</li>
  *   <li>{@link #getChunk(int, int, int)} (or {@link #getOrGenerateChunk(int, int, int)})
  *       for immediate access</li>
  * </ol>
@@ -158,8 +159,8 @@ public class ChunkManager {
         return meshManager.requestMesh(key, this::getLoadedChunk, this::getChunk);
     }
 
-    public void pollCompletedMeshes() {
-        meshManager.pollCompleted(this::getLoadedChunk, loaded.values());
+    public void pollCompletedMeshes(ShaderProgram shader) {
+        meshManager.pollCompleted(this::getLoadedChunk, shader);
     }
 
     public void markChunkMeshDirty(ChunkKey key) {
