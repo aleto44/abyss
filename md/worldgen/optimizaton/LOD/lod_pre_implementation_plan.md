@@ -83,7 +83,8 @@ For LOD, rendering should depend on render entries rather than raw loaded chunk 
 - unload policy
 - stats aggregation
 
-That is manageable now, but it will become harder to extend when the streamer needs multiple representation bands.
+The class is already internally well-decomposed — private records (`SweepOutcome`, `UnloadOutcome`, `SubmissionStats`) and focused private methods keep each concern cleanly separated within the file.
+The concern here is not current testability but future extension: adding a second LOD streaming band will require the sweep and budgeting logic to handle more than one representation type, and that will be harder if all decisions remain inside one class.
 
 ### 4. Meshing assumes same-resolution neighbours
 `ChunkMesher.hasRequiredNeighbors(...)` currently assumes six face-adjacent neighbours at the same chunk resolution.
@@ -155,6 +156,22 @@ The important part is that the renderer should not care whether a renderable obj
 - a future proxy mesh
 - a merged region mesh
 
+### What a render entry must carry
+This is a concrete gap that the abstraction must close.
+`FirstPersonWorldRenderer.renderChunkMeshes(...)` currently pulls three things from two different sources:
+- `chunk.getWorldX/Y/Z()` — used to build the model matrix for the MVP transform
+- `chunk.getWorldX/Y/Z()` + chunk size — used by `ChunkCuller` to build the AABB for frustum testing
+- `loadedChunk.renderState().getOpaqueMeshes()` / `getTransparentMeshes()` — the actual geometry
+
+`MeshCoordinator.getOpaqueMeshes()` already demonstrates the gap: it returns a flat `Iterable<Mesh>` with no position attached, making it unusable as a standalone render source.
+
+A render entry must carry at minimum:
+- world-space origin (`worldX`, `worldY`, `worldZ`) — for both the MVP matrix and the AABB
+- opaque mesh list
+- transparent mesh list
+
+Frustum culling and MVP construction must work from these fields alone, with no knowledge of `VoxelChunk` or `LoadedChunk`.
+
 ### Acceptance criteria
 - the renderer no longer directly iterates loaded chunk storage
 - opaque and transparent render passes are formed from render-facing data
@@ -162,30 +179,32 @@ The important part is that the renderer should not care whether a renderable obj
 
 ---
 
-## Priority 3: split `CylinderChunkStreamer` into smaller policy units
+## Priority 3: prepare `CylinderChunkStreamer` for a second streaming band
 ### Objective
-Make streaming policy testable and extensible before LOD adds more decisions.
+Make the streaming policy extensible when LOD introduces a second representation band.
+This is lower urgency than Priorities 1 and 2 — the class is already internally clean and fully tested.
+Do not split it before LOD actually requires it.
 
-### Current pressure points
-- `src/main/java/com/example/abyss/world/render/CylinderChunkStreamer.java`
-- `src/main/java/com/example/abyss/world/ChunkLoader.java`
+### Current state
+`CylinderChunkStreamer` is already internally well-decomposed.
+The concerns listed in Finding 3 are separated via private methods and private records.
+`CylinderChunkStreamerTest` provides meaningful behavioural coverage.
+No immediate structural work is needed.
 
-### Recommended direction
-Separate at least these concerns:
-- observer-state tracking
-- sweep trigger logic
-- candidate generation
-- candidate prioritisation
-- submission budgeting
-- unload decision logic
+### What to watch for
+This becomes relevant when the streamer needs to make decisions across two representation bands — near-field full chunks and far-field proxies.
+At that point the sweep and budgeting logic will need to be extended without duplicating it.
 
-This does not need a large class explosion.
-Even small internal helpers or package-private collaborators would help.
+### Deferred direction
+When the second band arrives, consider extracting at minimum:
+- candidate generation and sorting into a reusable form
+- submission budgeting as a shared limiter across both bands
+- unload policy as a separate predicate that both near and far bands consult
 
-### Acceptance criteria
-- chunk streaming behaviour is preserved
-- candidate selection logic can be tested independently from unload timing
-- future LOD bands can reuse sweep and budgeting logic without copying the whole class
+### Acceptance criteria (when triggered)
+- chunk streaming behaviour is fully preserved
+- near-field and far-field bands can share sweep and budgeting logic without copying it
+- the split is driven by an actual LOD need, not pre-emptive restructuring
 
 ---
 
@@ -241,29 +260,24 @@ Add focused tests for:
 
 ## Suggested Order of Work
 
-## Step 1: document ownership boundaries
-Create a short internal design note or update this file with the final ownership decision before code changes begin.
+## Step 1: introduce render-facing data flow and decouple render state
+Refactor the renderer path and decouple render state from loaded chunk storage in the same change.
+These two steps are coupled — the render entry naturally replaces the `LoadedChunk` surface area in the renderer, so doing them separately means touching the same code twice.
 
-Questions to answer:
-- who owns authoritative chunk residency?
-- who owns render resource lifetime?
-- who exposes renderables to the renderer?
-- what is the intended boundary between full chunks and future LOD proxies?
+Concretely:
+- define a render entry carrying world origin, opaque meshes, and transparent meshes
+- replace both `iterateLoadedChunks()` loops in `FirstPersonWorldRenderer` with render entry iteration
+- move mesh-state ownership so it can be keyed independently of authoritative chunk storage
 
-## Step 2: introduce render-facing data flow
-Refactor the renderer path first so render code depends on a render-facing API rather than direct loaded-chunk iteration.
-
-## Step 3: separate render state from loaded chunk storage
-Once the render-facing API exists, move mesh-state ownership behind that boundary.
-
-## Step 4: split the streaming policy class
-Extract the current streamer into smaller decision units while preserving current behaviour and stats.
-
-## Step 5: refactor meshing readiness boundaries
+## Step 2: refactor meshing readiness boundaries
 Hide the current six-neighbour assumption behind a named abstraction.
 
-## Step 6: expand test coverage around lifecycle edges
+## Step 3: expand test coverage around lifecycle edges
 Add tests after each cleanup step so the pre-LOD base is stable before main implementation begins.
+
+## Step 4: split streaming policy (deferred — do when LOD adds a second band)
+Do not split `CylinderChunkStreamer` until a second streaming band is actually being introduced.
+At that point extract candidate generation, budgeting, and unload policy in a targeted way driven by the real LOD need.
 
 ---
 
