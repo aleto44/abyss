@@ -21,9 +21,9 @@ class CylinderChunkStreamerTest {
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
 
-        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        ChunkStreamingStats stats = streamer.getLastStats();
         assertTrue(stats.sweepTriggered());
-        assertEquals(CylinderChunkStreamer.SweepReason.INITIAL, stats.lastSweepReason());
+        assertEquals(ChunkStreamingSweepReason.INITIAL, stats.lastSweepReason());
         assertEquals(9, stats.candidatesConsidered());
         assertEquals(9, stats.submittedThisUpdate());
         assertEquals(0, stats.skippedKnownThisUpdate());
@@ -41,9 +41,9 @@ class CylinderChunkStreamerTest {
         streamer.updateForPosition(observerPosition, 0.016f);
         streamer.updateForPosition(observerPosition, 0.30f);
 
-        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        ChunkStreamingStats stats = streamer.getLastStats();
         assertTrue(stats.sweepTriggered());
-        assertEquals(CylinderChunkStreamer.SweepReason.IDLE_RESWEEP, stats.lastSweepReason());
+        assertEquals(ChunkStreamingSweepReason.IDLE_RESWEEP, stats.lastSweepReason());
         assertEquals(9, stats.candidatesConsidered());
         assertEquals(0, stats.submittedThisUpdate());
         assertEquals(9, stats.skippedKnownThisUpdate());
@@ -62,7 +62,7 @@ class CylinderChunkStreamerTest {
         streamer.updateForPosition(observerPosition, 0.016f);
         streamer.updateForPosition(observerPosition, 2.1f);
 
-        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        ChunkStreamingStats stats = streamer.getLastStats();
         assertTrue(stats.unloadScanTriggered());
         assertEquals(3, stats.unloadedChunkCountThisUpdate());
         assertEquals(2, stats.cancelledPendingCountThisUpdate());
@@ -80,9 +80,9 @@ class CylinderChunkStreamerTest {
         streamer.updateForPosition(observerPosition, 0.016f);
         streamer.updateForPosition(observerPosition, 0.01f);
 
-        CylinderChunkStreamer.StreamerStats stats = streamer.getLastStats();
+        ChunkStreamingStats stats = streamer.getLastStats();
         assertFalse(stats.sweepTriggered());
-        assertEquals(CylinderChunkStreamer.SweepReason.NONE, stats.lastSweepReason());
+        assertEquals(ChunkStreamingSweepReason.NONE, stats.lastSweepReason());
         assertEquals(0, stats.submittedThisUpdate());
         assertEquals(0, stats.skippedKnownThisUpdate());
     }

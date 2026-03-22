@@ -11,7 +11,7 @@ import com.example.abyss.world.LoadedChunk;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.meshing.MeshSectionData;
-import com.example.abyss.world.render.CylinderChunkStreamer;
+import com.example.abyss.world.render.ChunkStreamingStats;
 import com.example.abyss.world.voxel.VoxelData;
 
 import java.util.List;
@@ -51,7 +51,7 @@ public class FirstPersonWorldDebugOverlay {
             Vector3 cameraPosition,
             Vector3 cameraDirection,
             AbyssWorld world,
-            CylinderChunkStreamer.StreamerStats streamerStats,
+            ChunkStreamingStats streamerStats,
             int lastFrustumCulledChunks,
             String controlSummary
     ) {
