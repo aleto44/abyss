@@ -3,6 +3,7 @@ package com.example.abyss.world;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.meshing.MeshSectionData;
+import com.example.abyss.world.render.lod.LodProxyManager;
 import com.example.abyss.world.voxel.VoxelData;
 
 import java.util.List;
@@ -17,9 +18,11 @@ public class WorldDebugStatsProvider {
     private static final long BYTES_PER_SHORT = 2L;
 
     private final ChunkManager chunkManager;
+    private final LodProxyManager lodProxyManager;
 
-    public WorldDebugStatsProvider(ChunkManager chunkManager) {
+    public WorldDebugStatsProvider(ChunkManager chunkManager, LodProxyManager lodProxyManager) {
         this.chunkManager = chunkManager;
+        this.lodProxyManager = lodProxyManager;
     }
 
     public WorldDebugStats snapshot() {
@@ -33,7 +36,8 @@ public class WorldDebugStatsProvider {
                 pendingChunkCount,
                 pendingMeshCount,
                 approximateLoadedVoxelMemoryBytes,
-                approximatePendingMeshMemoryBytes
+                approximatePendingMeshMemoryBytes,
+                lodProxyManager.getDebugStats()
         );
     }
 

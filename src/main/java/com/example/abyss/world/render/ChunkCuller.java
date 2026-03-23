@@ -20,7 +20,7 @@ public class ChunkCuller {
      * @param entry  the render entry to test
      * @param camera the camera whose frustum is used for the test
      */
-    public boolean isFrustumVisible(ChunkRenderEntry entry, Camera camera) {
+    public boolean isFrustumVisible(RenderMeshSource entry, Camera camera) {
         float wx = entry.worldX();
         float wy = entry.worldY();
         float wz = entry.worldZ();

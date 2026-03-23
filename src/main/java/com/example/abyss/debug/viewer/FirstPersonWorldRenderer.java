@@ -9,7 +9,7 @@ import com.badlogic.gdx.math.Matrix4;
 import com.example.abyss.debug.constants.FirstPersonWorldDebugConstants;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.ChunkCuller;
-import com.example.abyss.world.render.ChunkRenderEntry;
+import com.example.abyss.world.render.RenderMeshSource;
 import com.example.abyss.world.render.WorldRenderSnapshot;
 
 import java.util.List;
@@ -48,24 +48,24 @@ public class FirstPersonWorldRenderer {
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
-        for (ChunkRenderEntry entry : renderSnapshot.nearFieldEntries()) {
+        for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
                 frustumCulled++;
                 continue;
             }
-            renderChunkMeshes(entry, camera, ChunkRenderEntry::opaqueMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes);
         }
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         Gdx.gl.glDepthMask(false);
-        for (ChunkRenderEntry entry : renderSnapshot.nearFieldEntries()) {
+        for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, ChunkRenderEntry::transparentMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes);
         }
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -77,15 +77,15 @@ public class FirstPersonWorldRenderer {
         shaderProgram.dispose();
     }
 
-    private void renderChunkMeshes(ChunkRenderEntry entry, PerspectiveCamera camera,
-                                   Function<ChunkRenderEntry, List<Mesh>> meshSelector) {
+    private void renderChunkMeshes(RenderMeshSource entry, PerspectiveCamera camera,
+                                   Function<RenderMeshSource, List<Mesh>> meshSelector) {
         setChunkTransform(entry, camera);
         for (Mesh mesh : meshSelector.apply(entry)) {
             renderMesh(mesh);
         }
     }
 
-    private void setChunkTransform(ChunkRenderEntry entry, PerspectiveCamera camera) {
+    private void setChunkTransform(RenderMeshSource entry, PerspectiveCamera camera) {
         modelMatrix.idt().setTranslation(entry.worldX(), entry.worldY(), entry.worldZ());
         modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
         shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);

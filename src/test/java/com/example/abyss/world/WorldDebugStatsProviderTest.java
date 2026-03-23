@@ -3,6 +3,7 @@ package com.example.abyss.world;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.meshing.MeshSectionData;
+import com.example.abyss.world.render.lod.LodProxyManager;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -20,7 +21,7 @@ class WorldDebugStatsProviderTest {
     @BeforeEach
     void setUp() {
         chunkManager = new ChunkManager(42L, GenConfigResolver.DEFAULT);
-        statsProvider = new WorldDebugStatsProvider(chunkManager);
+        statsProvider = new WorldDebugStatsProvider(chunkManager, new LodProxyManager());
     }
 
     @AfterEach
@@ -37,6 +38,11 @@ class WorldDebugStatsProviderTest {
         assertEquals(0, stats.pendingMeshCount());
         assertEquals(0L, stats.approximateLoadedVoxelMemoryBytes());
         assertEquals(0L, stats.approximatePendingMeshMemoryBytes());
+        assertEquals(0, stats.farFieldStats().loadedProxyRegionCount());
+        assertEquals(0, stats.farFieldStats().pendingProxyMeshCount());
+        assertEquals(0L, stats.farFieldStats().approximateLoadedProxyMeshMemoryBytes());
+        assertEquals(0L, stats.farFieldStats().promotionCount());
+        assertEquals(0L, stats.farFieldStats().demotionCount());
     }
 
     @Test

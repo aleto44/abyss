@@ -4,8 +4,7 @@ import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.meshing.MeshCoordinator;
 import com.example.abyss.world.render.WorldRenderSnapshot;
 import com.example.abyss.world.render.WorldRenderSource;
-
-import java.util.Collections;
+import com.example.abyss.world.render.lod.LodProxyManager;
 
 /**
  * Top-level façade for the Abyss world.
@@ -30,6 +29,7 @@ public class AbyssWorld implements WorldRenderSource {
     private MeshCoordinator meshCoordinator;
     private ChunkLoader chunkLoader;
     private WorldDebugStatsProvider worldDebugStatsProvider;
+    private LodProxyManager lodProxyManager;
 
     public AbyssWorld(long seed) {
         this(seed, GenConfigResolver.DEFAULT);
@@ -47,7 +47,8 @@ public class AbyssWorld implements WorldRenderSource {
         voxelAccess = new WorldVoxelAccess(chunkManager);
         voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
         chunkLoader = new ChunkLoader(chunkManager, meshCoordinator);
-        worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager);
+        lodProxyManager = new LodProxyManager();
+        worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager);
     }
 
     // ----------------------------------------------------------------
@@ -63,10 +64,7 @@ public class AbyssWorld implements WorldRenderSource {
         return worldDebugStatsProvider.snapshot();
     }
 
-    @Override
-    public WorldRenderSnapshot getRenderSnapshot() {
-        return new WorldRenderSnapshot(meshCoordinator.getRenderEntries(), Collections.emptyList());
-    }
+    public LodProxyManager getLodProxyManager() { return lodProxyManager; }
 
     // ----------------------------------------------------------------
     // Lifecycle
@@ -79,5 +77,10 @@ public class AbyssWorld implements WorldRenderSource {
         if (chunkManager != null) {
             chunkManager.shutdown();
         }
+    }
+
+    @Override
+    public WorldRenderSnapshot getRenderSnapshot() {
+        return new WorldRenderSnapshot(meshCoordinator.getRenderEntries(), lodProxyManager.getRenderEntries());
     }
 }

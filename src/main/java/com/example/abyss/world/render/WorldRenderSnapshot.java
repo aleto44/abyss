@@ -13,7 +13,7 @@ import java.util.List;
  * @param farFieldEntries renderable far-field proxy entries
  */
 public record WorldRenderSnapshot(
-        List<ChunkRenderEntry> nearFieldEntries,
+        List<BaseRenderEntry> nearFieldEntries,
         List<LodRenderEntry> farFieldEntries
 ) {
 }

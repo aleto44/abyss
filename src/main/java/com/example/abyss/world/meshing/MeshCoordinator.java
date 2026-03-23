@@ -5,7 +5,7 @@ import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.ChunkManager;
 import com.example.abyss.world.LoadedChunk;
-import com.example.abyss.world.render.ChunkRenderEntry;
+import com.example.abyss.world.render.BaseRenderEntry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -110,13 +110,13 @@ public class MeshCoordinator {
      * {@link com.example.abyss.world.VoxelChunk} directly.
      * </p>
      */
-    public List<ChunkRenderEntry> getRenderEntries() {
-        List<ChunkRenderEntry> entries = new ArrayList<>();
+    public List<BaseRenderEntry> getRenderEntries() {
+        List<BaseRenderEntry> entries = new ArrayList<>();
         for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
             float wx = loadedChunk.chunk().getWorldX();
             float wy = loadedChunk.chunk().getWorldY();
             float wz = loadedChunk.chunk().getWorldZ();
-            entries.add(new ChunkRenderEntry(
+            entries.add(new BaseRenderEntry(
                     wx, wy, wz,
                     loadedChunk.renderState().getOpaqueMeshes(),
                     loadedChunk.renderState().getTransparentMeshes()

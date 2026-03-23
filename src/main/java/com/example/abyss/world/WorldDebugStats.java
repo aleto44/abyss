@@ -1,5 +1,7 @@
 package com.example.abyss.world;
 
+import com.example.abyss.world.render.lod.LodDebugStats;
+
 /**
  * Debug-facing snapshot of near-field world state.
  * <p>
@@ -12,12 +14,14 @@ package com.example.abyss.world;
  * @param pendingMeshCount pending near-field mesh build count
  * @param approximateLoadedVoxelMemoryBytes approximate CPU memory used by loaded voxel arrays
  * @param approximatePendingMeshMemoryBytes approximate CPU memory used by pending mesh data
+ * @param farFieldStats debug-facing snapshot of far-field proxy state
  */
 public record WorldDebugStats(
         int loadedChunkCount,
         int pendingChunkCount,
         int pendingMeshCount,
         long approximateLoadedVoxelMemoryBytes,
-        long approximatePendingMeshMemoryBytes
+        long approximatePendingMeshMemoryBytes,
+        LodDebugStats farFieldStats
 ) {
 }
