@@ -6,24 +6,13 @@ import com.badlogic.gdx.graphics.g2d.BitmapFont;
 import com.badlogic.gdx.graphics.g2d.SpriteBatch;
 import com.badlogic.gdx.math.Matrix4;
 import com.badlogic.gdx.math.Vector3;
-import com.example.abyss.world.AbyssWorld;
-import com.example.abyss.world.LoadedChunk;
-import com.example.abyss.world.meshing.ChunkMeshState;
-import com.example.abyss.world.meshing.MeshData;
-import com.example.abyss.world.meshing.MeshSectionData;
+import com.example.abyss.world.WorldDebugStats;
 import com.example.abyss.world.render.ChunkStreamingStats;
-import com.example.abyss.world.voxel.VoxelData;
-
-import java.util.List;
 
 /**
  * Overlay renderer and debug-info formatter for the first-person world debug viewer.
  */
 public class FirstPersonWorldDebugOverlay {
-
-    private static final long BYTES_PER_FLOAT = 4L;
-    private static final long BYTES_PER_REFERENCE = 8L;
-    private static final long BYTES_PER_SHORT = 2L;
 
     private final SpriteBatch batch;
     private final BitmapFont font;
@@ -50,15 +39,13 @@ public class FirstPersonWorldDebugOverlay {
             String startupInfo,
             Vector3 cameraPosition,
             Vector3 cameraDirection,
-            AbyssWorld world,
+            WorldDebugStats worldDebugStats,
             ChunkStreamingStats streamerStats,
             int lastFrustumCulledChunks,
             String controlSummary
     ) {
-        long approximateVoxelMemoryBytes = estimateLoadedVoxelMemoryBytes(world);
-        long approximatePendingMeshMemoryBytes = estimatePendingMeshMemoryBytes(world);
-        String voxelMemoryText = formatByteCount(approximateVoxelMemoryBytes);
-        String pendingMeshMemoryText = formatByteCount(approximatePendingMeshMemoryBytes);
+        String voxelMemoryText = formatByteCount(worldDebugStats.approximateLoadedVoxelMemoryBytes());
+        String pendingMeshMemoryText = formatByteCount(worldDebugStats.approximatePendingMeshMemoryBytes());
         String sweepReason = streamerStats.lastSweepReason().name();
         return String.format(
                 "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\n%s\nFPS: %d",
@@ -69,9 +56,9 @@ public class FirstPersonWorldDebugOverlay {
                 cameraDirection.x,
                 cameraDirection.y,
                 cameraDirection.z,
-                world.getChunkManager().getLoadedCount(),
-                world.getChunkManager().getPendingCount(),
-                world.getChunkManager().getPendingMeshCount(),
+                worldDebugStats.loadedChunkCount(),
+                worldDebugStats.pendingChunkCount(),
+                worldDebugStats.pendingMeshCount(),
                 lastFrustumCulledChunks,
                 voxelMemoryText,
                 pendingMeshMemoryText,
@@ -90,44 +77,6 @@ public class FirstPersonWorldDebugOverlay {
                 controlSummary,
                 Gdx.graphics.getFramesPerSecond()
         );
-    }
-
-    private long estimateLoadedVoxelMemoryBytes(AbyssWorld world) {
-        long totalBytes = 0L;
-        for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
-            VoxelData data = loadedChunk.chunk().getData();
-            totalBytes += (long) data.getDensityField().length * BYTES_PER_FLOAT;
-            totalBytes += (long) data.getTypeField().length * BYTES_PER_REFERENCE;
-        }
-        return totalBytes;
-    }
-
-    private long estimatePendingMeshMemoryBytes(AbyssWorld world) {
-        long totalBytes = 0L;
-        for (LoadedChunk loadedChunk : world.getChunkManager().iterateLoadedChunks()) {
-            ChunkMeshState renderState = loadedChunk.renderState();
-            MeshData pendingMeshData = renderState.getPendingMeshData();
-            boolean hasPendingMeshData = pendingMeshData != null;
-            if (hasPendingMeshData) {
-                totalBytes += estimateMeshDataBytes(pendingMeshData);
-            }
-        }
-        return totalBytes;
-    }
-
-    private long estimateMeshDataBytes(MeshData meshData) {
-        long opaqueBytes = estimateMeshSectionBytes(meshData.opaqueSections());
-        long transparentBytes = estimateMeshSectionBytes(meshData.transparentSections());
-        return opaqueBytes + transparentBytes;
-    }
-
-    private long estimateMeshSectionBytes(List<MeshSectionData> sections) {
-        long totalBytes = 0L;
-        for (MeshSectionData section : sections) {
-            totalBytes += (long) section.vertices().length * BYTES_PER_FLOAT;
-            totalBytes += (long) section.indices().length * BYTES_PER_SHORT;
-        }
-        return totalBytes;
     }
 
     private String formatByteCount(long bytes) {

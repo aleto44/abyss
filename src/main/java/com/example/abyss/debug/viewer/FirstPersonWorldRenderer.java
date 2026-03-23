@@ -10,6 +10,10 @@ import com.example.abyss.debug.constants.FirstPersonWorldDebugConstants;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.ChunkCuller;
 import com.example.abyss.world.render.ChunkRenderEntry;
+import com.example.abyss.world.render.WorldRenderSnapshot;
+
+import java.util.List;
+import java.util.function.Function;
 
 /**
  * Render helper for the first-person chunk debug world view.
@@ -39,29 +43,29 @@ public class FirstPersonWorldRenderer {
         shaderProgram.bind();
         int frustumCulled = 0;
 
-        Iterable<ChunkRenderEntry> renderEntries = world.getMeshCoordinator().getRenderEntries();
+        WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
         Gdx.gl.glEnable(GL20.GL_DEPTH_TEST);
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
-        for (ChunkRenderEntry entry : renderEntries) {
+        for (ChunkRenderEntry entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
                 frustumCulled++;
                 continue;
             }
-            renderChunkMeshes(entry, camera, true);
+            renderChunkMeshes(entry, camera, ChunkRenderEntry::opaqueMeshes);
         }
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         Gdx.gl.glDepthMask(false);
-        for (ChunkRenderEntry entry : renderEntries) {
+        for (ChunkRenderEntry entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, false);
+            renderChunkMeshes(entry, camera, ChunkRenderEntry::transparentMeshes);
         }
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -73,14 +77,18 @@ public class FirstPersonWorldRenderer {
         shaderProgram.dispose();
     }
 
-    private void renderChunkMeshes(ChunkRenderEntry entry, PerspectiveCamera camera, boolean opaquePass) {
+    private void renderChunkMeshes(ChunkRenderEntry entry, PerspectiveCamera camera,
+                                   Function<ChunkRenderEntry, List<Mesh>> meshSelector) {
+        setChunkTransform(entry, camera);
+        for (Mesh mesh : meshSelector.apply(entry)) {
+            renderMesh(mesh);
+        }
+    }
+
+    private void setChunkTransform(ChunkRenderEntry entry, PerspectiveCamera camera) {
         modelMatrix.idt().setTranslation(entry.worldX(), entry.worldY(), entry.worldZ());
         modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
         shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
-        Iterable<Mesh> meshes = opaquePass ? entry.opaqueMeshes() : entry.transparentMeshes();
-        for (Mesh mesh : meshes) {
-            renderMesh(mesh);
-        }
     }
 
     private void renderMesh(Mesh mesh) {

@@ -1,8 +1,11 @@
 package com.example.abyss.world;
 
 import com.example.abyss.world.gen.GenConfigResolver;
-import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.meshing.MeshCoordinator;
+import com.example.abyss.world.render.WorldRenderSnapshot;
+import com.example.abyss.world.render.WorldRenderSource;
+
+import java.util.Collections;
 
 /**
  * Top-level façade for the Abyss world.
@@ -18,7 +21,7 @@ import com.example.abyss.world.meshing.MeshCoordinator;
  * invoke operations directly on it.
  * </p>
  */
-public class AbyssWorld {
+public class AbyssWorld implements WorldRenderSource {
 
     private final long seed;
     private final GenConfigResolver resolver;
@@ -26,6 +29,7 @@ public class AbyssWorld {
     private WorldVoxelAccess voxelAccess;
     private MeshCoordinator meshCoordinator;
     private ChunkLoader chunkLoader;
+    private WorldDebugStatsProvider worldDebugStatsProvider;
 
     public AbyssWorld(long seed) {
         this(seed, GenConfigResolver.DEFAULT);
@@ -43,6 +47,7 @@ public class AbyssWorld {
         voxelAccess = new WorldVoxelAccess(chunkManager);
         voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
         chunkLoader = new ChunkLoader(chunkManager, meshCoordinator);
+        worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager);
     }
 
     // ----------------------------------------------------------------
@@ -53,6 +58,15 @@ public class AbyssWorld {
     public WorldVoxelAccess getVoxelAccess() { return voxelAccess; }
     public MeshCoordinator getMeshCoordinator() { return meshCoordinator; }
     public ChunkLoader getChunkLoader() { return chunkLoader; }
+
+    public WorldDebugStats getWorldDebugStats() {
+        return worldDebugStatsProvider.snapshot();
+    }
+
+    @Override
+    public WorldRenderSnapshot getRenderSnapshot() {
+        return new WorldRenderSnapshot(meshCoordinator.getRenderEntries(), Collections.emptyList());
+    }
 
     // ----------------------------------------------------------------
     // Lifecycle

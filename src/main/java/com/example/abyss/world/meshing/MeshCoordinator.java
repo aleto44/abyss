@@ -1,6 +1,5 @@
 package com.example.abyss.world.meshing;
 
-import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkKey;
@@ -111,7 +110,7 @@ public class MeshCoordinator {
      * {@link com.example.abyss.world.VoxelChunk} directly.
      * </p>
      */
-    public Iterable<ChunkRenderEntry> getRenderEntries() {
+    public List<ChunkRenderEntry> getRenderEntries() {
         List<ChunkRenderEntry> entries = new ArrayList<>();
         for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
             float wx = loadedChunk.chunk().getWorldX();

@@ -156,7 +156,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 startupInfo,
                 camera.position,
                 camera.direction,
-                world,
+                world.getWorldDebugStats(),
                 chunkStreamer.getLastStats(),
                 worldRenderer.getLastFrustumCulledChunks(),
                 FirstPersonDebugController.getControlSummary()
