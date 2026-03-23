@@ -2,13 +2,11 @@ package com.example.abyss.world.meshing;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.world.ChunkFaceConnectivity;
-import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.VoxelChunk;
 import com.example.abyss.world.voxel.VoxelType;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Function;
 
 /**
  * Background-safe chunk mesher.
@@ -167,16 +165,6 @@ public final class ChunkMesher {
         section.indices.add(base);
         section.indices.add((short) (base + 2));
         section.indices.add((short) (base + 3));
-    }
-
-    public static boolean hasRequiredNeighbors(ChunkKey key,
-                                               Function<ChunkKey, VoxelChunk> chunkLookup) {
-        return chunkLookup.apply(new ChunkKey(key.cx() + 1, key.cy(), key.cz())) != null
-                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy() + 1, key.cz())) != null
-                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() + 1)) != null
-                && chunkLookup.apply(new ChunkKey(key.cx() - 1, key.cy(), key.cz())) != null
-                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy() - 1, key.cz())) != null
-                && chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1)) != null;
     }
 
     // -------------------------------------------------------------------------

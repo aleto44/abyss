@@ -7,6 +7,7 @@ import com.example.abyss.debug.viewer.DebugSliceViewerController;
 import com.example.abyss.debug.viewer.WorldGenColorResolver;
 import com.example.abyss.debug.viewer.WorldGenSliceRenderer;
 import com.example.abyss.world.AbyssWorld;
+import com.example.abyss.world.render.ChunkRenderEntry;
 import com.example.abyss.world.voxel.VoxelType;
 
 /**
@@ -88,8 +89,12 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
     @Override
     protected String buildDebugInfo() {
         int pendingMeshCount = world.getChunkManager().getPendingMeshCount();
-        int opaqueMeshCount = count(world.getMeshCoordinator().getOpaqueMeshes());
-        int transparentMeshCount = count(world.getMeshCoordinator().getTransparentMeshes());
+        int opaqueMeshCount = 0;
+        int transparentMeshCount = 0;
+        for (ChunkRenderEntry entry : world.getMeshCoordinator().getRenderEntries()) {
+            opaqueMeshCount += entry.opaqueMeshes().size();
+            transparentMeshCount += entry.transparentMeshes().size();
+        }
 
         return String.format(
                 "%s\n" +
@@ -119,11 +124,4 @@ public class ChunkStreamingDebugApp extends AbstractSliceDebugApp {
         }
     }
 
-    private static int count(Iterable<?> values) {
-        int total = 0;
-        for (Object ignored : values) {
-            total++;
-        }
-        return total;
-    }
 }

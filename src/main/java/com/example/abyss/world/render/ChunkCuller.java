@@ -3,10 +3,10 @@ package com.example.abyss.world.render;
 import com.badlogic.gdx.graphics.Camera;
 import com.badlogic.gdx.math.Vector3;
 import com.badlogic.gdx.math.collision.BoundingBox;
-import com.example.abyss.world.VoxelChunk;
+import com.example.abyss.WorldConstants;
 
 /**
- * Determines which chunks should be rendered from a given camera position
+ * Determines which render entries should be rendered from a given camera position
  * using frustum culling.
  */
 public class ChunkCuller {
@@ -15,16 +15,16 @@ public class ChunkCuller {
     private final BoundingBox chunkBounds = new BoundingBox();
 
     /**
-     * Returns {@code true} if the chunk's AABB intersects the camera frustum.
+     * Returns {@code true} if the render entry's AABB intersects the camera frustum.
      *
-     * @param chunk  the chunk to test
+     * @param entry  the render entry to test
      * @param camera the camera whose frustum is used for the test
      */
-    public boolean isFrustumVisible(VoxelChunk chunk, Camera camera) {
-        float wx = chunk.getWorldX();
-        float wy = chunk.getWorldY();
-        float wz = chunk.getWorldZ();
-        float size = VoxelChunk.SIZE;
+    public boolean isFrustumVisible(ChunkRenderEntry entry, Camera camera) {
+        float wx = entry.worldX();
+        float wy = entry.worldY();
+        float wz = entry.worldZ();
+        float size = WorldConstants.CHUNK_SIZE;
         chunkBounds.set(
                 new Vector3(wx, wy, wz),
                 new Vector3(wx + size, wy + size, wz + size)

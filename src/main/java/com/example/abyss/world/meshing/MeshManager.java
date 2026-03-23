@@ -48,10 +48,18 @@ public class MeshManager {
      */
     private final BudgetedDrainQueue<Mesh> disposeQueue = new BudgetedDrainQueue<>();
 
+    /**
+     * Policy that decides whether all required neighbours are loaded before
+     * a mesh job is submitted. Defaults to the standard six-face same-resolution
+     * check; can be replaced for LOD-aware meshing.
+     */
+    private final MeshingNeighbourPolicy neighbourPolicy;
+
     public MeshManager() {
         this.taskQueue = KeyedTaskQueue.<ChunkKey, MeshData>builder()
                 .threadNamePrefix("ChunkMesh")
                 .build();
+        this.neighbourPolicy = new SameResolutionNeighbourPolicy();
     }
 
     public boolean requestMesh(ChunkKey key,
@@ -67,7 +75,7 @@ public class MeshManager {
         if (!renderState.isMeshDirty() || renderState.isMeshQueued()) {
             return false;
         }
-        if (!ChunkMesher.hasRequiredNeighbors(key, chunkLookup)) {
+        if (!neighbourPolicy.hasRequiredNeighbours(key, chunkLookup)) {
             return false;
         }
 

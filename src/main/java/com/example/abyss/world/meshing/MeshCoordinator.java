@@ -6,6 +6,7 @@ import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkKey;
 import com.example.abyss.world.ChunkManager;
 import com.example.abyss.world.LoadedChunk;
+import com.example.abyss.world.render.ChunkRenderEntry;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,21 +103,27 @@ public class MeshCoordinator {
     // Render queries
     // ----------------------------------------------------------------
 
-    /** Returns all opaque meshes from currently-loaded chunks. */
-    public Iterable<Mesh> getOpaqueMeshes() {
-        List<Mesh> meshes = new ArrayList<>();
+    /**
+     * Returns a render entry for every currently-loaded chunk that has geometry.
+     * <p>
+     * Each entry carries the world-space origin and both mesh lists so the
+     * renderer and frustum culler have no need to touch {@link LoadedChunk} or
+     * {@link com.example.abyss.world.VoxelChunk} directly.
+     * </p>
+     */
+    public Iterable<ChunkRenderEntry> getRenderEntries() {
+        List<ChunkRenderEntry> entries = new ArrayList<>();
         for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
-            meshes.addAll(loadedChunk.renderState().getOpaqueMeshes());
+            float wx = loadedChunk.chunk().getWorldX();
+            float wy = loadedChunk.chunk().getWorldY();
+            float wz = loadedChunk.chunk().getWorldZ();
+            entries.add(new ChunkRenderEntry(
+                    wx, wy, wz,
+                    loadedChunk.renderState().getOpaqueMeshes(),
+                    loadedChunk.renderState().getTransparentMeshes()
+            ));
         }
-        return meshes;
+        return entries;
     }
 
-    /** Returns all transparent meshes from currently-loaded chunks. */
-    public Iterable<Mesh> getTransparentMeshes() {
-        List<Mesh> meshes = new ArrayList<>();
-        for (LoadedChunk loadedChunk : chunkManager.iterateLoadedChunks()) {
-            meshes.addAll(loadedChunk.renderState().getTransparentMeshes());
-        }
-        return meshes;
-    }
 }
