@@ -7,8 +7,8 @@
 - **Voxel Mechanics**: Players can mine, build, and manipulate voxels for traversal (e.g., crafting ladders from local materials or digging shelters). Voxels affect physics: unstable ground collapses, water flows dynamically, and environmental hazards like toxic gas pockets or bioluminescent lures interact with the terrain.
 - **Artifacts**: Scattered rare items (tools, relics, tech) with procedural rarity. Deeper layers yield better artifacts (e.g., Layer 1: basic tools; Layer 5: reality-bending relics). Finding them requires exploration puzzles, like navigating hidden voxel chambers or solving environmental riddles based on observed patterns (e.g., creature migration paths).
 
-### 2. Core Gameplay Loop: Descent and Knowledge Progression
-- **Descent Focus**: Players start at the surface town (hub for new characters). Goal is to delve deeper for artifacts, but survival relies on knowledge rather than stats/levels. No traditional XP; progression is player skill and in-game "journal" system where observations unlock hints (e.g., noting a creature's weakness to light reveals crafting recipes for flares).
+    ### 2. Core Gameplay Loop: Vertical Exploration and Knowledge Progression
+- **Vertical Exploration**: Players start at the surface town (hub for new characters). Goal is to explore deeper for artifacts, but survival relies on knowledge rather than stats/levels. **Players actively traverse up and down the abyss**, establishing camps, retrieving resources from different layers, and navigating between depths. The ascending curse creates risk during upward movement, but does not prevent vertical traversal entirely. No traditional XP; progression is player skill and in-game "journal" system where observations unlock hints (e.g., noting a creature's weakness to light reveals crafting recipes for flares).
 - **Knowledge as Mechanic**: The main "fun" comes from learning and applying ecosystem rules. Creatures and environments are complex:
     - Creatures: AI-driven with behaviors (e.g., pack hunters that ambush in fog, symbiotic plants that heal or poison based on interaction). Players must observe (e.g., via a "scan" tool) to learn weaknesses, habitats, or uses (e.g., harvesting a creature's hide for armor).
     - Environment: Hazards like pressure changes, hallucinations, or "curse zones" require knowledge-based counters (e.g., brewing antidotes from foraged voxels). Repeated plays build meta-knowledge: "In Layer 3, avoid red fungi during rain cycles."
@@ -29,11 +29,11 @@
     - Layer 1-2: Tutorial-like, mild hazards, common artifacts.
     - Mid-Layers: Complex ecosystems, rare finds, knowledge puzzles.
     - Deep Layers: Extreme dangers, legendary artifacts, reality-warping effects (e.g., inverted gravity voxels).
-- **Ascending Curse**: Like the "Curse of the Abyss," ascending inflicts layer-specific debuffs that worsen with depth ascended from:
+- **Ascending Curse**: Like the "Curse of the Abyss," ascending inflicts layer-specific debuffs that worsen with depth ascended from. This creates strategic tension in vertical traversal rather than preventing it entirely:
     - Shallow Ascents: Mild nausea (screen blur, reduced stamina).
     - Mid: Bleeding or hallucinations (phantom creatures, false voxel visuals).
     - Deep: Severe, like organ failure (permanent health loss) or madness (inverted controls).
-    - Mechanics: Curse activates on upward movement (e.g., climbing >100m). Counters via knowledge (e.g., artifacts that mitigate, or safe "ascent routes" learned over runs). Encourages one-way deep dives, with rare "elevator" relics for safer returns.
+    - Mechanics: Curse activates on upward movement (e.g., climbing >100m). Counters via knowledge (e.g., artifacts that mitigate, or safe "ascent routes" learned over runs). Creates risk-reward decisions: quick ascent for safety vs. slow careful climb to manage the curse. "Elevator" relics or established safe routes enable faster vertical travel once earned.
 
 ### 6. Additional Mechanics
 - **Combat/Survival**: Knowledge-based avoidance over direct fights. Craft tools from voxels/artifacts (e.g., traps using creature behaviors).
