@@ -12,10 +12,9 @@ import com.example.abyss.lib.FastNoiseLite;
  * Discrete voxel-type assignment is handled separately by {@link VoxelTypeResolver}.
  * </p>
  * <p>
- * The two cache-population methods ({@link #populateColumnCache},
- * {@link #populateLerpCache}) prepare reusable scratch buffers so that the
- * hot voxel loop in {@link ProceduralGenerator} can call {@link #evaluateCached}
- * with only cheap interpolation arithmetic instead of full noise evaluations.
+ * Call {@link #populateColumnCache} and {@link #populateLerpCache} once per chunk to
+ * fill the shared scratch buffers, then use {@link #evaluateCached} inside the hot
+ * voxel loop for cheap interpolation-only evaluation.
  * </p>
  */
 public class DensityFunction {
@@ -62,20 +61,6 @@ public class DensityFunction {
                 FastNoiseLite.NoiseType.OpenSimplex2, FastNoiseLite.FractalType.Ridged, 2, 0.006f);
         boundaryNoise = buildNoise((int) (seed ^ 0xABCD_1234L),
                 FastNoiseLite.NoiseType.OpenSimplex2, null, -1, 0.003f);
-    }
-
-    // ---------------------------------------------------------------
-    // Frequency control (called per Y-slice by ProceduralGenerator)
-    // ---------------------------------------------------------------
-
-    /**
-     * Updates the terrain noise frequency.
-     * {@link ProceduralGenerator} calls this once per Y-slice when the
-     * resolved {@link LayerGenConfig#noiseFrequency()} changes, avoiding
-     * redundant setter calls inside the hot voxel loop.
-     */
-    public void setTerrainFrequency(float frequency) {
-        terrainNoise.SetFrequency(frequency);
     }
 
     // ---------------------------------------------------------------
@@ -204,42 +189,6 @@ public class DensityFunction {
         float caveTerm       = trilinear(lerpCache.cave,    lx, ly, lz);
 
         return terrainDensity - colCache.shaftTerm[colIdx] + colCache.boundaryTerm[colIdx] - caveTerm;
-    }
-
-    // ---------------------------------------------------------------
-    // Uncached overload (preserved for tests and one-off callers)
-    // ---------------------------------------------------------------
-
-    /**
-     * Computes the combined density value for a single voxel.
-     * {@code density > 0} → solid; {@code density ≤ 0} → air/fluid.
-     *
-     * @param wx  world X
-     * @param wy  world Y
-     * @param wz  world Z
-     * @param cfg resolved gen config for this Y position
-     */
-    public float evaluate(int wx, int wy, int wz, LayerGenConfig cfg) {
-        float terrainDensity = terrainNoise.GetNoise(wx, wy, wz) * cfg.noiseAmplitude()
-                + cfg.baseDensityThreshold();
-
-        float shaftRadius          = cfg.shaftDiameter() / 2f;
-        float radiusPerturbation   = shaftNoise.GetNoise(wx, wy, wz) * (shaftRadius * 0.25f);
-        float effectiveRadius      = shaftRadius + radiusPerturbation;
-        float horizontalDist       = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
-        float shaftTerm            = 1f - smoothstep(effectiveRadius - SHAFT_MARGIN,
-                                                     effectiveRadius + SHAFT_MARGIN,
-                                                     horizontalDist);
-
-        float boundaryPerturbation = boundaryNoise.GetNoise(wx, wy, wz) * (ABYSS_BOUNDARY_RADIUS * 0.1f);
-        float effectiveBoundary    = ABYSS_BOUNDARY_RADIUS + boundaryPerturbation;
-        float boundaryTerm         = smoothstep(effectiveBoundary - BOUNDARY_MARGIN,
-                                                effectiveBoundary + BOUNDARY_MARGIN,
-                                                horizontalDist);
-
-        float caveTerm = caveTerm(caveNoise.GetNoise(wx, wy, wz));
-
-        return terrainDensity - shaftTerm + boundaryTerm - caveTerm;
     }
 
     // ---------------------------------------------------------------

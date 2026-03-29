@@ -74,9 +74,7 @@ public class VoxelTypeResolver {
      * Resolves the voxel type using pre-computed XZ column values from
      * {@link DensityFunction#populateColumnCache} and {@link #populateTypeJitter}.
      *
-     * @param wx      world X
      * @param wy      world Y
-     * @param wz      world Z
      * @param density density from {@link DensityFunction#evaluateCached}
      * @param cfg     resolved gen config for this Y slice
      * @param layer   primary layer at {@code wy}
@@ -84,7 +82,7 @@ public class VoxelTypeResolver {
      * @param lx      local X in chunk (0–31)
      * @param lz      local Z in chunk (0–31)
      */
-    public VoxelType resolveCached(int wx, int wy, int wz, float density,
+    public VoxelType resolveCached(int wy, float density,
                                    LayerGenConfig cfg, Layer layer,
                                    ColumnNoiseCache cache, int lx, int lz) {
         boolean isSolid = density > 0f;
@@ -106,68 +104,8 @@ public class VoxelTypeResolver {
     }
 
     // ---------------------------------------------------------------
-    // Uncached overload (preserved for tests and one-off callers)
-    // ---------------------------------------------------------------
-
-    /**
-     * Resolves the voxel type without a pre-populated cache.
-     *
-     * @param wx      world X
-     * @param wy      world Y
-     * @param wz      world Z
-     * @param density density from {@link DensityFunction#evaluate}
-     * @param cfg     resolved gen config for this Y position
-     * @param layer   primary layer at {@code wy}
-     */
-    public VoxelType resolve(int wx, int wy, int wz, float density,
-                             LayerGenConfig cfg, Layer layer) {
-        boolean isSolid = density > 0f;
-        if (isSolid) {
-            return pickSolidType(wx, wy, wz, density, cfg);
-        }
-
-        VoxelType surfaceWater = checkSurfaceOcean(wx, wy, wz, layer);
-        if (surfaceWater != null) {
-            return surfaceWater;
-        }
-
-        boolean isOceaniaWater = layer == Layer.OCEANIA && wy < OCEANIA_WATERLINE_Y;
-        if (isOceaniaWater) {
-            return VoxelType.WATER;
-        }
-
-        return VoxelType.AIR;
-    }
-
-    // ---------------------------------------------------------------
     // Private helpers
     // ---------------------------------------------------------------
-
-    private VoxelType pickSolidType(int wx, int wy, int wz, float density, LayerGenConfig cfg) {
-        VoxelType[] types = cfg.dominantVoxelTypes();
-        if (types.length == 1) {
-            return types[0];
-        }
-
-        float jitter                = typeNoise.GetNoise(wx, wy, wz) * (SURFACE_SHELL_DEPTH * 0.4f);
-        float effectiveSurfaceDepth = SURFACE_SHELL_DEPTH + jitter;
-        boolean isInSurfaceShell    = density < effectiveSurfaceDepth;
-        if (isInSurfaceShell) {
-            return types[0];
-        }
-
-        if (types.length == 2) {
-            return types[1];
-        }
-
-        float effectiveMidDepth = MID_SHELL_DEPTH + jitter;
-        boolean isInMidShell    = density < effectiveMidDepth;
-        if (isInMidShell) {
-            return types[1];
-        }
-
-        return types[types.length - 1];
-    }
 
     private VoxelType pickSolidTypeCached(float density, LayerGenConfig cfg,
                                           ColumnNoiseCache cache, int lx, int lz) {
@@ -194,20 +132,6 @@ public class VoxelTypeResolver {
         }
 
         return types[types.length - 1];
-    }
-
-    private VoxelType checkSurfaceOcean(int wx, int wy, int wz, Layer layer) {
-        if (layer != Layer.SURFACE) {
-            return null;
-        }
-        float horizontalDist     = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
-        float effectiveBoundary  = DensityFunction.ABYSS_BOUNDARY_RADIUS;
-        boolean isBeyondBoundary = horizontalDist > effectiveBoundary;
-        boolean isBelowSeaLevel  = wy <= SURFACE_SEA_LEVEL_Y;
-        if (isBeyondBoundary && isBelowSeaLevel) {
-            return VoxelType.WATER;
-        }
-        return null;
     }
 
     private VoxelType checkSurfaceOceanCached(int wy, Layer layer,

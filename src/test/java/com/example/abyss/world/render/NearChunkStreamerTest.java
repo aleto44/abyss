@@ -11,12 +11,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class CylinderChunkStreamerTest {
+class NearChunkStreamerTest {
 
     @Test
     void initialUpdateTriggersInitialSweepAndTracksSubmittedCounts() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -35,7 +35,7 @@ class CylinderChunkStreamerTest {
     @Test
     void secondIdleUpdateCountsKnownRequestsDuringIdleResweep() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -56,7 +56,7 @@ class CylinderChunkStreamerTest {
     void unloadScanStatsReflectLoaderResultsWhenIntervalExpires() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
         chunkLoader.nextUnloadStats = new ChunkLoader.UnloadStats(3, 2);
-        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 1);
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 1, 0, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -74,7 +74,7 @@ class CylinderChunkStreamerTest {
     @Test
     void noSweepWhenStillAndIntervalsNotReady() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        CylinderChunkStreamer streamer = new CylinderChunkStreamer(chunkLoader, 1, 0);
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);

@@ -1,5 +1,6 @@
 package com.example.abyss.world.render.lod;
 
+import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.render.MeshListRenderState;
 
 /**
@@ -12,6 +13,7 @@ import com.example.abyss.world.render.MeshListRenderState;
 public class LodProxyMeshState extends MeshListRenderState {
 
     private long approximateMeshMemoryBytes;
+    private MeshData pendingMeshData;
 
     public long getApproximateMeshMemoryBytes() {
         return approximateMeshMemoryBytes;
@@ -19,5 +21,13 @@ public class LodProxyMeshState extends MeshListRenderState {
 
     public void setApproximateMeshMemoryBytes(long approximateMeshMemoryBytes) {
         this.approximateMeshMemoryBytes = approximateMeshMemoryBytes;
+    }
+
+    public MeshData getPendingMeshData() {
+        return pendingMeshData;
+    }
+
+    public void setPendingMeshData(MeshData pendingMeshData) {
+        this.pendingMeshData = pendingMeshData;
     }
 }

@@ -19,7 +19,7 @@ import java.util.function.Predicate;
  * </ul>
  * This class holds no sweep strategy, no player-position state, and no camera knowledge.
  * Callers are responsible for deciding <em>which</em> chunks to request and <em>when</em>
- * — see {@link com.example.abyss.world.render.CylinderChunkStreamer} for a cylinder-based policy.
+ * — see {@link com.example.abyss.world.render.NearChunkStreamer} for a cylinder-based policy.
  * The synchronous {@link #loadChunksAround} method exists for init and testing only.
  * </p>
  */

@@ -133,15 +133,12 @@ public class ProceduralGenerator {
 
             // Step 3: evaluate density and assign voxel type using both caches
             for (int lz = 0; lz < SIZE; lz++) {
-                int wz = worldBaseZ + lz;
                 for (int lx = 0; lx < SIZE; lx++) {
-                    int wx = worldBaseX + lx;
-
                     float density = densityFunction.evaluateCached(
                             columnNoiseCache, densityLerpCache, lx, ly, lz);
                     data.setDensity(lx, ly, lz, density);
 
-                    VoxelType type = typeResolver.resolveCached(wx, wy, wz, density, cfg,
+                    VoxelType type = typeResolver.resolveCached(wy, density, cfg,
                             primaryLayer, columnNoiseCache, lx, lz);
                     data.setType(lx, ly, lz, type);
                 }

@@ -11,8 +11,6 @@ public final class FirstPersonWorldDebugConstants {
     public static final long WORLD_SEED = 42L;
     public static final int INITIAL_HORIZONTAL_RADIUS = 8;
     public static final int INITIAL_VERTICAL_RADIUS = 2;
-    public static final int STREAM_HORIZONTAL_RADIUS = 14;
-    public static final int STREAM_VERTICAL_RADIUS = 8;
     public static final float CAMERA_FOV_DEGREES = 75f;
     public static final float CAMERA_NEAR = 0.1f;
     public static final float CAMERA_FAR = 1200f;

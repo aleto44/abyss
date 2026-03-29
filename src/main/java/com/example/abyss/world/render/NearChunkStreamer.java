@@ -6,11 +6,10 @@ import com.example.abyss.WorldConstants;
 import com.example.abyss.world.ChunkLoader;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
- * Cylinder-based chunk streaming policy.
+ * Cylinder-based near-field chunk streaming policy.
  * <p>
  * Loads every chunk within a cylinder around the player.
  * The shaft is narrow enough that any chunk within the horizontal radius is
@@ -18,16 +17,15 @@ import java.util.List;
  * only caused thrash as the player turned.
  * </p>
  * <p>
- * Unloading uses a pure positional cylinder with an asymmetric vertical window:
- * chunks above the player are evicted sooner than chunks below, matching the
- * one-directional downward travel pattern of the abyss.
+ * Unloading uses a pure positional cylinder centered on the player with symmetric
+ * vertical bounds, supporting vertical exploration in both directions through the abyss.
  * </p>
  * <p>
  * {@link ChunkLoader} is used as a pure executor. It is only told which
  * specific coordinates to load or unload, with no knowledge of cameras.
  * </p>
  */
-public class CylinderChunkStreamer {
+public class NearChunkStreamer {
 
   /**
    * How often (in seconds) the unload scan runs.
@@ -53,21 +51,13 @@ public class CylinderChunkStreamer {
    * Needed because {@link #MAX_SUBMISSIONS_PER_SWEEP} caps each sweep.
    */
   private static final float IDLE_RESWEEP_INTERVAL_SECONDS = 0.25f;
-  /**
-   * How many chunks above the player to keep loaded.
-   * Smaller than {@code vRadius} because the player is descending.
-   */
-  private static final int V_KEEP_ABOVE = 10;
 
   private final ChunkLoader chunkLoader;
-  private final int hRadius;
-  private final int vRadius;
+  private final CylinderStreamer cylinderStreamer;
 
   private int lastSweptPcx = Integer.MIN_VALUE;
   private int lastSweptPcy = Integer.MIN_VALUE;
   private int lastSweptPcz = Integer.MIN_VALUE;
-
-  private final Vector3 lastPosition = new Vector3(Float.NaN, Float.NaN, Float.NaN);
 
   private float unloadTimer = 0f;
   private float movementSweepTimer = 0f;
@@ -75,10 +65,9 @@ public class CylinderChunkStreamer {
 
   private final ChunkStreamingStatsTracker statsTracker = new ChunkStreamingStatsTracker();
 
-  public CylinderChunkStreamer(ChunkLoader chunkLoader, int hRadius, int vRadius) {
+  public NearChunkStreamer(ChunkLoader chunkLoader, CylinderStreamer cylinderStreamer) {
     this.chunkLoader = chunkLoader;
-    this.hRadius = hRadius;
-    this.vRadius = vRadius;
+    this.cylinderStreamer = cylinderStreamer;
   }
 
   /**
@@ -109,7 +98,7 @@ public class CylinderChunkStreamer {
     int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
 
     boolean playerChunkChanged = pcx != lastSweptPcx || pcy != lastSweptPcy || pcz != lastSweptPcz;
-    boolean playerMoving = isObserverMoving(observerPosition, deltaTime);
+    boolean playerMoving = cylinderStreamer.updateAndCheckMovement(observerPosition, deltaTime, MOVEMENT_SWEEP_THRESHOLD);
 
     movementSweepTimer += deltaTime;
     idleResweepTimer += deltaTime;
@@ -163,17 +152,10 @@ public class CylinderChunkStreamer {
     int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
 
     ChunkLoader.UnloadStats unloadStats = chunkLoader.unloadChunks(key -> {
-      int dx = Math.abs(key.cx() - pcx);
-      int dz = Math.abs(key.cz() - pcz);
-      boolean isOutsideHorizontal = dx > hRadius + 1 || dz > hRadius + 1;
-      if (isOutsideHorizontal) {
-        return true;
-      }
-
-      int rawDy = key.cy() - pcy;
-      boolean isTooFarAbove = rawDy > V_KEEP_ABOVE;
-      boolean isTooFarBelow = rawDy < -vRadius;
-      return isTooFarAbove || isTooFarBelow;
+      int deltaX = key.cx() - pcx;
+      int deltaY = key.cy() - pcy;
+      int deltaZ = key.cz() - pcz;
+      return cylinderStreamer.isOutsideKeepZone(deltaX, deltaY, deltaZ, 1, 0);
     });
     return UnloadOutcome.triggered(unloadStats.unloadedChunkCount(), unloadStats.cancelledPendingCount());
   }
@@ -201,68 +183,36 @@ public class CylinderChunkStreamer {
     return ChunkStreamingSweepReason.NONE;
   }
 
-  private boolean isObserverMoving(Vector3 currentPosition, float deltaTime) {
-    boolean lastPositionKnown = !Float.isNaN(lastPosition.x);
-    float prevX = lastPosition.x;
-    float prevY = lastPosition.y;
-    float prevZ = lastPosition.z;
-    lastPosition.set(currentPosition);
-    if (!lastPositionKnown) {
-      return false;
-    }
-    float dx = currentPosition.x - prevX;
-    float dy = currentPosition.y - prevY;
-    float dz = currentPosition.z - prevZ;
-    float distanceMoved = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
-    float speedThisFrame = deltaTime > 0f ? distanceMoved / deltaTime : 0f;
-    return speedThisFrame > MOVEMENT_SWEEP_THRESHOLD;
-  }
-
   private SubmissionStats submitCylinderCandidatesNearestFirst(int pcx, int pcy, int pcz, Vector3 camPos) {
-    float chunkSize = WorldConstants.CHUNK_SIZE;
-    float camX = camPos.x;
-    float camY = camPos.y;
-    float camZ = camPos.z;
-
     List<int[]> candidates = new ArrayList<>();
-    for (int dy = -vRadius; dy <= vRadius; dy++) {
-      for (int dz = -hRadius; dz <= hRadius; dz++) {
-        for (int dx = -hRadius; dx <= hRadius; dx++) {
+    int horizontalRadius = cylinderStreamer.getHRadius();
+    int verticalRadius = cylinderStreamer.getVRadius();
+    for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
+      for (int dz = -horizontalRadius; dz <= horizontalRadius; dz++) {
+        for (int dx = -horizontalRadius; dx <= horizontalRadius; dx++) {
           candidates.add(new int[]{pcx + dx, pcy + dy, pcz + dz});
         }
       }
     }
 
-    candidates.sort(Comparator.comparingDouble(candidate -> {
-      float cx = candidate[0] * chunkSize + chunkSize * 0.5f;
-      float cy = candidate[1] * chunkSize + chunkSize * 0.5f;
-      float cz = candidate[2] * chunkSize + chunkSize * 0.5f;
-      float dx = cx - camX;
-      float dy = cy - camY;
-      float dz = cz - camZ;
-      return dx * dx + dy * dy + dz * dz;
-    }));
+    candidates.sort(cylinderStreamer.createNearestFirstComparator(WorldConstants.CHUNK_SIZE, camPos));
 
-    int submitted = 0;
+    StreamingSubmissionBudget budget = new StreamingSubmissionBudget(MAX_SUBMISSIONS_PER_SWEEP);
     int skippedKnown = 0;
     int candidatesConsidered = 0;
-    boolean budgetExhausted = false;
     for (int[] candidate : candidates) {
-      boolean isBudgetExhausted = submitted >= MAX_SUBMISSIONS_PER_SWEEP;
-      if (isBudgetExhausted) {
-        budgetExhausted = true;
+      if (budget.isExhausted()) {
         break;
       }
       candidatesConsidered++;
       boolean wasNew = chunkLoader.requestChunkAsync(candidate[0], candidate[1], candidate[2]);
       if (wasNew) {
-        submitted++;
-      }
-      else {
+        budget.recordSubmission();
+      } else {
         skippedKnown++;
       }
     }
-    return new SubmissionStats(candidatesConsidered, submitted, skippedKnown, budgetExhausted);
+    return new SubmissionStats(candidatesConsidered, budget.getSubmitted(), skippedKnown, budget.isExhausted());
   }
 
   private record SubmissionStats(

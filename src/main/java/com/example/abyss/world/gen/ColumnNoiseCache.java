@@ -6,7 +6,7 @@ import com.example.abyss.world.voxel.VoxelData;
  * Reusable scratch cache for per-XZ-column noise values computed once before
  * the inner Y loop during chunk generation.
  * <p>
- * For a 32×32×32 chunk, several inputs to {@link DensityFunction#evaluate} depend
+ * For a 32×32×32 chunk, several inputs to {@link DensityFunction#evaluateCached} depend
  * only on world X and Z, or vary so slowly in Y across 32 voxels that caching at
  * the XZ plane is a safe approximation:
  * <ul>
@@ -46,7 +46,7 @@ public class ColumnNoiseCache {
 
     /**
      * Precomputed {@code effectiveBoundary = ABYSS_BOUNDARY_RADIUS + perturbation} per XZ column.
-     * Needed separately by the surface-ocean check in {@link DensityFunction#assignTypeCached}.
+     * Needed separately by the surface-ocean check in {@link VoxelTypeResolver#resolveCached}.
      */
     final float[] effectiveBoundary = new float[AREA];
 

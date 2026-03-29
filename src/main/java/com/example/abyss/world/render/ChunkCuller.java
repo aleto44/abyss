@@ -16,18 +16,27 @@ public class ChunkCuller {
 
     /**
      * Returns {@code true} if the render entry's AABB intersects the camera frustum.
-     *
-     * @param entry  the render entry to test
-     * @param camera the camera whose frustum is used for the test
+     * Uses {@link WorldConstants#CHUNK_SIZE} as the bounding box size — suitable for
+     * near-field chunk entries.
      */
     public boolean isFrustumVisible(RenderMeshSource entry, Camera camera) {
+        float size = WorldConstants.CHUNK_SIZE;
+        return isFrustumVisible(entry, camera, size, size, size);
+    }
+
+    /**
+     * Returns {@code true} if the render entry's AABB intersects the camera frustum,
+     * using explicit bounding box dimensions. Use this for entries whose size differs
+     * from a single chunk (e.g. LOD proxy regions).
+     */
+    public boolean isFrustumVisible(RenderMeshSource entry, Camera camera,
+                                    float sizeX, float sizeY, float sizeZ) {
         float wx = entry.worldX();
         float wy = entry.worldY();
         float wz = entry.worldZ();
-        float size = WorldConstants.CHUNK_SIZE;
         chunkBounds.set(
                 new Vector3(wx, wy, wz),
-                new Vector3(wx + size, wy + size, wz + size)
+                new Vector3(wx + sizeX, wy + sizeY, wz + sizeZ)
         );
         return camera.frustum.boundsInFrustum(chunkBounds);
     }

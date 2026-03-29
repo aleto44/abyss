@@ -15,8 +15,8 @@ final class ChunkStreamingStatsTracker {
   }
 
   void recordUpdate(
-      CylinderChunkStreamer.SweepOutcome sweepOutcome,
-      CylinderChunkStreamer.UnloadOutcome unloadOutcome
+      NearChunkStreamer.SweepOutcome sweepOutcome,
+      NearChunkStreamer.UnloadOutcome unloadOutcome
   ) {
     boolean sweepTriggered = sweepOutcome.sweepTriggered();
     if (sweepTriggered) {
