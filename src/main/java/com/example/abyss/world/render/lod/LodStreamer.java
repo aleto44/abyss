@@ -173,8 +173,8 @@ public class LodStreamer {
             int dx = key.regionX() - rx;
             int dy = key.regionY() - ry;
             int dz = key.regionZ() - rz;
-            boolean isOutsideBand = cylinderStreamer.isOutsideLodBand(dx, dy, dz);
-            if (isOutsideBand) {
+            boolean isNoLongerInBand = !cylinderStreamer.isInLodBand(dx, dy, dz, REGION_SIZE);
+            if (isNoLongerInBand) {
                 toRemove.add(key);
             }
         }
