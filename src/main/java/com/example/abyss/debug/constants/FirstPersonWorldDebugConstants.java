@@ -13,12 +13,12 @@ public final class FirstPersonWorldDebugConstants {
     public static final int INITIAL_VERTICAL_RADIUS = 2;
     public static final float CAMERA_FOV_DEGREES = 75f;
     public static final float CAMERA_NEAR = 0.1f;
-    public static final float CAMERA_FAR = 1200f;
+    public static final float CAMERA_FAR = 2000f;
     public static final float MOVE_SPEED_UNITS_PER_SECOND = 48f;
     public static final float FAST_MOVE_MULTIPLIER = 3f;
     public static final float MOUSE_SENSITIVITY_DEGREES = 0.15f;
     public static final Vector3 START_POSITION = new Vector3(0f, 0f, 0f);
-    public static final Color SKY_COLOR = new Color(0.03f, 0.04f, 0.08f, 1f);
+    public static final Color SKY_COLOR = new Color(0.45f, 0.68f, 0.92f, 1f);
 
     public static final String VERTEX_SHADER_SOURCE = """
             attribute vec3 a_position;
