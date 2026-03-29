@@ -65,7 +65,7 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
      * Maximum extra void radius (voxels) the erosion can eat into the wall at y=0.
      * Lower → subtle lip weathering only.
      * Higher → wall is chewed back more aggressively at the top.
-     * Keep well below RING_INNER_RADIUS (320) to avoid eating into the mountain foothills.
+     * Keep well below the ring inner radius (innerSlopeStart + RING_INNER_OFFSET_FROM_SLOPE_START) to avoid eating into the mountain foothills.
      */
     private static final float RIM_EROSION_AMPLITUDE = 20f;
 

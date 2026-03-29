@@ -25,40 +25,64 @@ import com.example.abyss.world.voxel.VoxelType;
 public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
     // ---- Ring geometry ----
+    //
+    // All four ring-boundary radii are computed dynamically from innerSlopeStart so that
+    // the mountain ring automatically re-centres when THE_EDGE shaft diameter changes.
+    // The constants below are offsets / widths that preserve the shape of the ring
+    // (how steeply it rises and falls) regardless of the abyss opening size.
 
     /**
-     * Radial distance (voxels) at which the ring envelope begins to rise.
-     * This is pulled back inside the slope zone so the ring foothills already have some
-     * height while the inner slope multiplier is still ramping up — giving the slope
-     * actual terrain to carve rather than multiplying zero and producing flat ground
-     * followed by a sudden jump.
-     * Must be less than RING_INNER_RADIUS by at least the width of the slope zone.
+     * How far back inside the slope zone the ring envelope begins to rise, expressed as
+     * a distance subtracted from {@code innerSlopeStart}.
+     * Keeping this positive ensures the foothills already have real base height while
+     * the slope multiplier is still ramping up — no flat-then-sudden-jump artefact.
+     * Derived from original layout: innerSlopeStart(345) − RING_RISE_START(200) = 145.
      */
-    private static final float RING_RISE_START = 200f;
+    private static final float RING_RISE_OFFSET_FROM_SLOPE_START = 145f;
 
     /**
-     * Radial distance (voxels from world origin) at which the inner slope finishes and
-     * the ring foothills take over.  The ring envelope reaches full strength at RING_PEAK_RADIUS,
-     * so terrain continues rising smoothly past this point.
-     * Lower → ring inner edge closer to the shaft; smaller flat zone.
-     * Higher → wider flat zone between the shaft lip and the ring base.
+     * How far past {@code innerSlopeStart} the ring inner edge (slope end) sits.
+     * Controls the width of the transition from shaft lip to ring foothills.
+     * Lower → tighter transition; higher → more gradual transition.
+     * Derived from original layout: RING_INNER_RADIUS(380) − innerSlopeStart(345) = 35.
      */
-    static final float RING_INNER_RADIUS = 380f;
+    static final float RING_INNER_OFFSET_FROM_SLOPE_START = 35f;
 
     /**
-     * Radial distance at which the ring reaches its maximum height.
-     * Lower → peak band is closer to the shaft, tighter ring.
-     * Higher → peak band is pushed farther out; combine with RING_OUTER_RADIUS to keep
-     *           the ring from becoming too thin.
+     * Width of the zone from the ring inner edge to the ring peak, in voxels.
+     * Controls how quickly elevation builds past the ring foot.
+     * Lower → steeper rise to the crest; higher → longer, more gradual ascent.
+     * Derived from original layout: RING_PEAK_RADIUS(650) − RING_INNER_RADIUS(380) = 270.
      */
-    private static final float RING_PEAK_RADIUS  = 650f;
+    private static final float RING_RISE_WIDTH = 270f;
 
     /**
-     * Radial distance at which the ring has fully faded back to flat terrain.
-     * Lower → ring is narrow and drops off quickly past the peaks.
-     * Higher → ring has a long, gradual outer slope; terrain stays elevated farther out.
+     * Width of the zone from the ring peak to the outer fade, in voxels.
+     * Controls the length of the outer slope before terrain returns to flat.
+     * Lower → sharp outer drop; higher → long, gentle outer descent.
+     * Derived from original layout: RING_OUTER_RADIUS(1000) − RING_PEAK_RADIUS(650) = 350.
      */
-    private static final float RING_OUTER_RADIUS  = 1000f;
+    private static final float RING_OUTER_WIDTH = 350f;
+
+    /**
+     * Holds the four computed ring-boundary radii for a single {@code process()} call.
+     * Computed once per chunk from the live shaft diameter so every method can use
+     * consistent values without accepting four separate float parameters.
+     *
+     * @param riseStart  radius at which the ring envelope begins to rise
+     * @param innerRadius radius at which the inner slope ends and the ring foothills begin
+     * @param peakRadius  radius at which the ring reaches maximum height
+     * @param outerRadius radius at which the ring has fully faded to flat terrain
+     */
+    private record RingGeometry(float riseStart, float innerRadius, float peakRadius, float outerRadius) {
+        static RingGeometry from(float innerSlopeStart) {
+            float innerRadius = innerSlopeStart + RING_INNER_OFFSET_FROM_SLOPE_START;
+            float riseStart   = innerSlopeStart - RING_RISE_OFFSET_FROM_SLOPE_START;
+            float peakRadius  = innerRadius + RING_RISE_WIDTH;
+            float outerRadius = peakRadius  + RING_OUTER_WIDTH;
+            return new RingGeometry(riseStart, innerRadius, peakRadius, outerRadius);
+        }
+    }
 
     /**
      * Hard cap on mountain height, in voxels above the layer floor.
@@ -174,13 +198,14 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         }
 
         float innerSlopeStart = innerSlopeStart(resolver);
+        RingGeometry ring = RingGeometry.from(innerSlopeStart);
 
         for (int lz = 0; lz < size; lz++) {
             int wz = worldBaseZ + lz;
             for (int lx = 0; lx < size; lx++) {
                 int wx = worldBaseX + lx;
 
-                int targetHeight = computeColumnHeight(wx, wz, innerSlopeStart);
+                int targetHeight = computeColumnHeight(wx, wz, innerSlopeStart, ring);
                 fillColumn(data, lx, lz, worldBaseY, targetHeight, layerFloor);
             }
         }
@@ -194,11 +219,11 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
      * Computes the world-Y height that this XZ column should be filled up to.
      * Returns a value in [Layer.SURFACE.getYEnd(), Layer.SURFACE.getYStart()].
      */
-    private int computeColumnHeight(int wx, int wz, float innerSlopeStart) {
+    private int computeColumnHeight(int wx, int wz, float innerSlopeStart, RingGeometry ring) {
         float radialDist = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
 
         // Step 1 — ring-biased base height
-        float ringStrength = ringEnvelope(radialDist);
+        float ringStrength = ringEnvelope(radialDist, ring);
         float base         = (baseNoise.GetNoise(wx, wz) * 0.5f + 0.5f); // 0..1
         float baseHeight   = base * ringStrength * MAX_MOUNTAIN_HEIGHT;
 
@@ -217,7 +242,7 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
         float slopeVariation   = slopeVariationNoise.GetNoise(wx, wz);                    // -1..1
         float slopeBumpNoise   = slopeVariationNoise.GetNoise(wx * 1.7f, wz * 1.7f);     // -1..1, uncorrelated detail
         float variedSlopeStart = innerSlopeStart + slopeVariation * INNER_SLOPE_VARIATION_AMPLITUDE;
-        float variedSlopeEnd   = RING_INNER_RADIUS + slopeVariation * (INNER_SLOPE_VARIATION_AMPLITUDE * 0.5f);
+        float variedSlopeEnd   = ring.innerRadius() + slopeVariation * (INNER_SLOPE_VARIATION_AMPLITUDE * 0.5f);
         float innerSlopeFactor = innerSlopeMultiplier(radialDist, variedSlopeStart, variedSlopeEnd);
         // Height bump peaks mid-slope and fades to zero at either end of the transition zone.
         float slopeZoneWeight  = 1f - Math.abs(innerSlopeFactor - 0.5f) * 2f;
@@ -233,13 +258,13 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
 
     /**
      * Radial envelope that shapes heights into a ring: 0 near the shaft, rises
-     * smoothly from RING_RISE_START to full strength at RING_PEAK_RADIUS, then
-     * fades back to 0 at the outer edge. Rising earlier than RING_INNER_RADIUS
-     * ensures the slope zone has real base height to carve into rather than zero.
+     * smoothly from riseStart to full strength at peakRadius, then fades back to 0
+     * at outerRadius. Rising earlier than innerRadius ensures the slope zone has real
+     * base height to carve into rather than zero.
      */
-    private static float ringEnvelope(float r) {
-        float rise = smoothstep(RING_RISE_START, RING_PEAK_RADIUS, r);
-        float fade = smoothstep(RING_PEAK_RADIUS, RING_OUTER_RADIUS, r);
+    private static float ringEnvelope(float r, RingGeometry ring) {
+        float rise = smoothstep(ring.riseStart(), ring.peakRadius(), r);
+        float fade = smoothstep(ring.peakRadius(), ring.outerRadius(), r);
         return rise * (1f - fade);
     }
 

@@ -31,7 +31,7 @@ public enum Layer {
                     0.05f,   // baseDensityThreshold – denser solid baseline for thick terrain
                     0.020f,  // noiseFrequency – higher frequency for chunkier, more varied formations
                     0.85f,   // noiseAmplitude – more dramatic variation creates thick protruding chunks
-                    650f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
+                    1250f,    // shaftDiameter – tighter shaft pushes solid mass closer to the centre
                     new VoxelType[]{VoxelType.GRASS, VoxelType.DIRT, VoxelType.STONE}
             ),
             new LayerRenderConfig(
