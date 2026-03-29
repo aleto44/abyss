@@ -39,8 +39,9 @@ public final class LodProxyGenerator {
     /**
      * Voxels between LOD surface samples (XZ step size for quad emission).
      * Each quad covers {@value #SAMPLE_STEP}×{@value #SAMPLE_STEP} voxels on the terrain surface.
+     * Lowering this value increases LOD detail (more quads per region).
      */
-    public static final int SAMPLE_STEP = 4;
+    public static final int SAMPLE_STEP = 2;
 
     /** Number of quad columns along X and Z within one region. */
     static final int GRID_W = REGION_VOXELS_H / SAMPLE_STEP;

@@ -109,6 +109,12 @@ class LodStreamerTest {
         }
 
         @Override
+        public boolean requestProxyMeshAsync(LodRegionKey key, int priority) {
+            requestedKeys.add(key);
+            return true;
+        }
+
+        @Override
         public List<LodRenderEntry> getRenderEntries() {
             return List.of();
         }

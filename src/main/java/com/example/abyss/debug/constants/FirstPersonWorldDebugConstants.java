@@ -13,7 +13,7 @@ public final class FirstPersonWorldDebugConstants {
     public static final int INITIAL_VERTICAL_RADIUS = 2;
     public static final float CAMERA_FOV_DEGREES = 75f;
     public static final float CAMERA_NEAR = 0.1f;
-    public static final float CAMERA_FAR = 2000f;
+    public static final float CAMERA_FAR = 4000f;
     public static final float MOVE_SPEED_UNITS_PER_SECOND = 48f;
     public static final float FAST_MOVE_MULTIPLIER = 3f;
     public static final float MOUSE_SENSITIVITY_DEGREES = 0.15f;
