@@ -128,11 +128,30 @@ public class ChunkManager {
      * @return {@code true} if a new generation task was submitted
      */
     public boolean requestChunkAsync(int cx, int cy, int cz) {
+        return requestChunkAsync(cx, cy, cz, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Requests chunk generation at a specific priority. Lower values execute first.
+     * No-op if the chunk is already loaded or pending.
+     *
+     * @return {@code true} if a new generation task was submitted
+     */
+    public boolean requestChunkAsync(int cx, int cy, int cz, int priority) {
         ChunkKey key = new ChunkKey(cx, cy, cz);
         if (loaded.containsKey(key)) {
             return false;
         }
-        return taskQueue.submit(key, () -> buildChunk(key));
+        return taskQueue.submit(key, () -> buildChunk(key), priority);
+    }
+
+    /**
+     * Attempts to raise the priority of an already-pending chunk generation task.
+     * No-op if the chunk is not pending or has already started generating.
+     */
+    public void reprioritiseChunkAsync(int cx, int cy, int cz, int newPriority) {
+        ChunkKey key = new ChunkKey(cx, cy, cz);
+        taskQueue.reprioritise(key, () -> buildChunk(key), newPriority);
     }
 
     /**

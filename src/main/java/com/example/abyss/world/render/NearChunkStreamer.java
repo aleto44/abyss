@@ -200,15 +200,17 @@ public class NearChunkStreamer {
     StreamingSubmissionBudget budget = new StreamingSubmissionBudget(MAX_SUBMISSIONS_PER_SWEEP);
     int skippedKnown = 0;
     int candidatesConsidered = 0;
-    for (int[] candidate : candidates) {
+    for (int priority = 0; priority < candidates.size(); priority++) {
       if (budget.isExhausted()) {
         break;
       }
+      int[] candidate = candidates.get(priority);
       candidatesConsidered++;
-      boolean wasNew = chunkLoader.requestChunkAsync(candidate[0], candidate[1], candidate[2]);
+      boolean wasNew = chunkLoader.requestChunkAsync(candidate[0], candidate[1], candidate[2], priority);
       if (wasNew) {
         budget.recordSubmission();
       } else {
+        chunkLoader.reprioritiseChunkAsync(candidate[0], candidate[1], candidate[2], priority);
         skippedKnown++;
       }
     }

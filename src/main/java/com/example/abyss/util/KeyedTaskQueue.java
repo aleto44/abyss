@@ -8,8 +8,9 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
@@ -40,21 +41,34 @@ import java.util.function.Supplier;
  */
 public class KeyedTaskQueue<K, V> {
 
+    /**
+     * Holds both the future and the queued task reference together so
+     * {@link #reprioritise} can attempt to remove the task from the pool queue.
+     */
+    private record PendingEntry<V>(CompletableFuture<V> future, PrioritizedTask<V> task) {}
+
     /** Tasks currently in flight. */
-    private final Map<K, CompletableFuture<V>> pending = new ConcurrentHashMap<>();
+    private final Map<K, PendingEntry<V>> pending = new ConcurrentHashMap<>();
 
     /** Keys that have been submitted or already completed — prevents duplicates. */
     private final Set<K> knownKeys = ConcurrentHashMap.newKeySet();
 
-    /** The thread pool that executes tasks. */
-    private final ExecutorService pool;
+    /** The thread pool that executes tasks in priority order. */
+    private final ThreadPoolExecutor pool;
 
     private KeyedTaskQueue(Builder<K, V> builder) {
-        this.pool = Executors.newFixedThreadPool(resolveThreadCount(builder), runnable -> {
-            Thread thread = new Thread(runnable, builder.threadNamePrefix);
-            thread.setDaemon(true);
-            return thread;
-        });
+        int threadCount = resolveThreadCount(builder);
+        String threadNamePrefix = builder.threadNamePrefix;
+        this.pool = new ThreadPoolExecutor(
+                threadCount, threadCount,
+                0L, TimeUnit.MILLISECONDS,
+                new PriorityBlockingQueue<>(),
+                runnable -> {
+                    Thread thread = new Thread(runnable, threadNamePrefix);
+                    thread.setDaemon(true);
+                    return thread;
+                }
+        );
     }
 
     private int resolveThreadCount(Builder<K, V> builder) {
@@ -62,6 +76,40 @@ public class KeyedTaskQueue<K, V> {
             return builder.threadCount;
         }
         return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    }
+
+    /**
+     * A task wrapper that carries a priority score so the backing
+     * {@link PriorityBlockingQueue} executes lower-numbered (closer) tasks first.
+     */
+    private static final class PrioritizedTask<V> implements Runnable, Comparable<PrioritizedTask<V>> {
+
+        private final int priority;
+        private final Supplier<V> work;
+        private final CompletableFuture<V> future;
+
+        PrioritizedTask(int priority, Supplier<V> work, CompletableFuture<V> future) {
+            this.priority = priority;
+            this.work     = work;
+            this.future   = future;
+        }
+
+        @Override
+        public void run() {
+            if (future.isCancelled()) {
+                return;
+            }
+            try {
+                future.complete(work.get());
+            } catch (Throwable t) {
+                future.completeExceptionally(t);
+            }
+        }
+
+        @Override
+        public int compareTo(PrioritizedTask<V> other) {
+            return Integer.compare(this.priority, other.priority);
+        }
     }
 
     // ----------------------------------------------------------------
@@ -107,19 +155,30 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /**
-     * Submits work for the given key if that key has not already been submitted
-     * or completed. Non-blocking.
+     * Submits work for the given key at the lowest priority.
+     * No-op if the key has already been submitted or completed.
      *
-     * @param key  identifies this unit of work for deduplication purposes
-     * @param work the computation to run on a worker thread
-     * @return {@code true} if the work was enqueued; {@code false} if already known
+     * @return {@code true} if a new generation task was submitted; {@code false} if already known
      */
     public boolean submit(K key, Supplier<V> work) {
+        return submit(key, work, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Submits work for the given key at the specified priority.
+     * Lower values execute first. No-op if already known.
+     *
+     * @param priority execution order — lower = sooner (0 is closest/highest priority)
+     * @return {@code true} if a new generation task was submitted; {@code false} if already known
+     */
+    public boolean submit(K key, Supplier<V> work, int priority) {
         if (!knownKeys.add(key)) {
             return false;
         }
-
-        pending.put(key, CompletableFuture.supplyAsync(work, pool));
+        CompletableFuture<V> future = new CompletableFuture<>();
+        PendingEntry<V> entry = new PendingEntry<>(future, new PrioritizedTask<>(priority, work, future));
+        pending.put(key, entry);
+        pool.execute(entry.task());
         return true;
     }
 
@@ -145,16 +204,16 @@ public class KeyedTaskQueue<K, V> {
         List<Result<K, V>> results = new ArrayList<>();
         var iterator = pending.entrySet().iterator();
         while (iterator.hasNext()) {
-            Map.Entry<K, CompletableFuture<V>> entry = iterator.next();
+            Map.Entry<K, PendingEntry<V>> entry = iterator.next();
             tryCollectCompletedResult(entry, iterator, results);
         }
         return results;
     }
 
-    private void tryCollectCompletedResult(Map.Entry<K, CompletableFuture<V>> entry,
-                                           java.util.Iterator<Map.Entry<K, CompletableFuture<V>>> iterator,
+    private void tryCollectCompletedResult(Map.Entry<K, PendingEntry<V>> entry,
+                                           java.util.Iterator<Map.Entry<K, PendingEntry<V>>> iterator,
                                            List<Result<K, V>> results) {
-        CompletableFuture<V> future = entry.getValue();
+        CompletableFuture<V> future = entry.getValue().future;
         if (!future.isDone()) {
             return;
         }
@@ -193,11 +252,11 @@ public class KeyedTaskQueue<K, V> {
      * returns the result. Returns {@code null} if no task is pending for that key.
      */
     public V awaitPending(K key) {
-        CompletableFuture<V> future = pending.remove(key);
-        if (future == null) {
+        PendingEntry<V> entry = pending.remove(key);
+        if (entry == null) {
             return null;
         }
-        return joinPendingFuture(key, future);
+        return joinPendingFuture(key, entry.future());
     }
 
     private V joinPendingFuture(K key, CompletableFuture<V> future) {
@@ -229,10 +288,38 @@ public class KeyedTaskQueue<K, V> {
      */
     public void forget(K key) {
         knownKeys.remove(key);
-        CompletableFuture<V> future = pending.remove(key);
-        if (future != null) {
-            future.cancel(false);
+        PendingEntry<V> entry = pending.remove(key);
+        if (entry != null) {
+            entry.future().cancel(false);
         }
+    }
+
+    /**
+     * Attempts to raise the priority of a pending task that has not yet started.
+     * <p>
+     * If the task is still sitting in the queue, it is removed and resubmitted with
+     * the new priority so it moves ahead of lower-priority work. If the task has
+     * already been picked up by a worker thread, this is a no-op — the work is
+     * already in progress and cannot be reordered.
+     * </p>
+     * Has no effect if the key is not known or if {@code newPriority} is not
+     * lower than the current priority.
+     *
+     * @param newPriority the new priority — must be lower (higher urgency) than the existing one to have any effect
+     */
+    public void reprioritise(K key, Supplier<V> work, int newPriority) {
+        PendingEntry<V> existing = pending.get(key);
+        if (existing == null) {
+            return;
+        }
+        boolean isStillQueued = existing.task().priority > newPriority
+                && pool.remove(existing.task());
+        if (!isStillQueued) {
+            return;
+        }
+        PrioritizedTask<V> newTask = new PrioritizedTask<>(newPriority, work, existing.future());
+        pending.put(key, new PendingEntry<>(existing.future(), newTask));
+        pool.execute(newTask);
     }
 
     // ----------------------------------------------------------------

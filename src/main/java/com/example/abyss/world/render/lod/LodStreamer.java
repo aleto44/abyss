@@ -137,17 +137,20 @@ public class LodStreamer {
         candidates.sort(cylinderStreamer.createNearestFirstComparator(REGION_SIZE, camPos));
 
         StreamingSubmissionBudget budget = new StreamingSubmissionBudget(MAX_SUBMISSIONS_PER_SWEEP);
-        for (int[] candidate : candidates) {
+        for (int priority = 0; priority < candidates.size(); priority++) {
             if (budget.isExhausted()) {
                 break;
             }
+            int[] candidate = candidates.get(priority);
             LodRegionKey key = new LodRegionKey(candidate[0], candidate[1], candidate[2], 1);
             boolean isKnown = proxyManager.isRegionKnown(key);
             if (!isKnown) {
-                boolean submitted = proxyManager.requestProxyMeshAsync(key);
+                boolean submitted = proxyManager.requestProxyMeshAsync(key, priority);
                 if (submitted) {
                     budget.recordSubmission();
                 }
+            } else {
+                proxyManager.reprioritiseProxyMeshAsync(key, priority);
             }
         }
     }

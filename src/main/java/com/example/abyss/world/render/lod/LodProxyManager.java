@@ -58,11 +58,29 @@ public class LodProxyManager {
      * @return {@code true} if a new generation task was submitted
      */
     public boolean requestProxyMeshAsync(LodRegionKey key) {
+        return requestProxyMeshAsync(key, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Requests proxy mesh generation at a specific priority. Lower values execute first.
+     * No-op if the region is already loaded or pending.
+     *
+     * @return {@code true} if a new generation task was submitted
+     */
+    public boolean requestProxyMeshAsync(LodRegionKey key, int priority) {
         boolean alreadyLoaded = loadedRegions.containsKey(key);
         if (alreadyLoaded) {
             return false;
         }
-        return taskQueue.submit(key, () -> generatorLocal.get().generate(key));
+        return taskQueue.submit(key, () -> generatorLocal.get().generate(key), priority);
+    }
+
+    /**
+     * Attempts to raise the priority of an already-pending proxy mesh generation task.
+     * No-op if the region is not pending or has already started generating.
+     */
+    public void reprioritiseProxyMeshAsync(LodRegionKey key, int newPriority) {
+        taskQueue.reprioritise(key, () -> generatorLocal.get().generate(key), newPriority);
     }
 
     /**
