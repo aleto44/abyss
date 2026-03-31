@@ -36,6 +36,7 @@ public class LodProxyManager {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<LodRegionKey, MeshData>builder()
                 .threadNamePrefix("LodProxyGen")
+                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors()))
                 .build();
     }
 

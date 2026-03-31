@@ -17,7 +17,7 @@ public final class FirstPersonWorldDebugConstants {
     public static final float MOVE_SPEED_UNITS_PER_SECOND = 48f;
     public static final float FAST_MOVE_MULTIPLIER = 3f;
     public static final float MOUSE_SENSITIVITY_DEGREES = 0.15f;
-    public static final Vector3 START_POSITION = new Vector3(0f, 0f, 0f);
+    public static final Vector3 START_POSITION = new Vector3(170f, 100f, 442f);
     public static final Color SKY_COLOR = new Color(0.45f, 0.68f, 0.92f, 1f);
 
     public static final String VERTEX_SHADER_SOURCE = """

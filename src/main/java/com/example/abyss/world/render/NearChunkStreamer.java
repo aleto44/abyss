@@ -50,7 +50,7 @@ public class NearChunkStreamer {
    * How often (in seconds) a re-sweep fires unconditionally.
    * Needed because {@link #MAX_SUBMISSIONS_PER_SWEEP} caps each sweep.
    */
-  private static final float IDLE_RESWEEP_INTERVAL_SECONDS = 0.25f;
+  private static final float IDLE_RESWEEP_INTERVAL_SECONDS = 0.1f;
 
   private final ChunkLoader chunkLoader;
   private final CylinderStreamer cylinderStreamer;
