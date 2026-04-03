@@ -4,6 +4,7 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.example.abyss.util.KeyedTaskQueue;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
+import java.util.function.Supplier;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshManager;
 
@@ -47,13 +48,19 @@ public class ChunkManager {
     private final KeyedTaskQueue<ChunkKey, VoxelChunk> taskQueue;
     private final MeshManager meshManager;
 
-    public ChunkManager(long seed, GenConfigResolver resolver) {
-        this.generatorLocal = ThreadLocal.withInitial(() -> new ProceduralGenerator(seed, resolver));
+    /** Preferred constructor — caller owns the {@link ProceduralGenerator} factory. */
+    public ChunkManager(Supplier<ProceduralGenerator> generatorFactory) {
+        this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<ChunkKey, VoxelChunk>builder()
                 .threadNamePrefix("ChunkGen")
                 .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors()))
                 .build();
         this.meshManager = new MeshManager();
+    }
+
+    /** Convenience overload — builds the factory internally from seed and resolver. */
+    public ChunkManager(long seed, GenConfigResolver resolver) {
+        this(() -> new ProceduralGenerator(seed, resolver));
     }
 
     private VoxelChunk buildChunk(ChunkKey key) {

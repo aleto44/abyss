@@ -2,6 +2,7 @@ package com.example.abyss.world;
 
 import com.example.abyss.WorldConstants;
 import com.example.abyss.world.gen.GenConfigResolver;
+import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.meshing.MeshCoordinator;
 import com.example.abyss.world.render.CylinderStreamer;
 import com.example.abyss.world.render.NearChunkStreamer;
@@ -10,6 +11,8 @@ import com.example.abyss.world.render.WorldRenderSource;
 import com.example.abyss.world.render.lod.LodProxyGenerator;
 import com.example.abyss.world.render.lod.LodProxyManager;
 import com.example.abyss.world.render.lod.LodStreamer;
+
+import java.util.function.Supplier;
 
 /**
  * Top-level façade for the Abyss world.
@@ -53,7 +56,8 @@ public class AbyssWorld implements WorldRenderSource {
    * Initialises the generation pipeline and all collaborator objects. Call once.
    */
   public void init() {
-    chunkManager = new ChunkManager(seed, resolver);
+    Supplier<ProceduralGenerator> generatorFactory = () -> new ProceduralGenerator(seed, resolver);
+    chunkManager = new ChunkManager(generatorFactory);
     meshCoordinator = new MeshCoordinator(chunkManager);
     voxelAccess = new WorldVoxelAccess(chunkManager);
     voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
@@ -65,7 +69,7 @@ public class AbyssWorld implements WorldRenderSource {
         WorldConstants.LOD_BAND_V_RADIUS / WorldConstants.REGION_CHUNKS
     );
     chunkStreamer = new NearChunkStreamer(chunkLoader, cylinderStreamer);
-    lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(seed, resolver));
+    lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(generatorFactory));
     lodStreamer = new LodStreamer(lodProxyManager, cylinderStreamer);
     worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager, lodStreamer);
   }

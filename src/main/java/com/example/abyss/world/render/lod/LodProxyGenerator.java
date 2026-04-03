@@ -2,8 +2,8 @@ package com.example.abyss.world.render.lod;
 
 import com.badlogic.gdx.graphics.Color;
 import com.example.abyss.WorldConstants;
-import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
+import java.util.function.Supplier;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.voxel.VoxelData;
 import com.example.abyss.world.voxel.VoxelType;
@@ -47,12 +47,9 @@ public final class LodProxyGenerator {
 
     private final ProceduralGenerator proceduralGenerator;
 
-    public LodProxyGenerator(long seed) {
-        this(seed, GenConfigResolver.DEFAULT);
-    }
-
-    public LodProxyGenerator(long seed, GenConfigResolver resolver) {
-        this.proceduralGenerator = new ProceduralGenerator(seed, resolver);
+    /** Caller owns the {@link ProceduralGenerator} factory; each call to the factory produces one instance per thread. */
+    public LodProxyGenerator(Supplier<ProceduralGenerator> generatorFactory) {
+        this.proceduralGenerator = generatorFactory.get();
     }
 
     // ---------------------------------------------------------------
