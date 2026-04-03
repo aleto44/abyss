@@ -54,16 +54,26 @@ public final class ChunkMesher {
     private ChunkMesher() {
     }
 
-    public static MeshData buildMesh(VoxelChunk center,
-                                     VoxelChunk plusX,
-                                     VoxelChunk plusY,
-                                     VoxelChunk plusZ,
-                                     VoxelChunk minusX,
-                                     VoxelChunk minusY,
-                                     VoxelChunk minusZ) {
+    /**
+     * The six axis-aligned neighbours required to build a chunk mesh.
+     * Using a record eliminates the positional ordering risk of a 7-argument method.
+     */
+    public record NeighbourChunks(
+            VoxelChunk plusX,
+            VoxelChunk plusY,
+            VoxelChunk plusZ,
+            VoxelChunk minusX,
+            VoxelChunk minusY,
+            VoxelChunk minusZ
+    ) {}
+
+    /** Builds a mesh for {@code center} using its six axis-aligned neighbours. */
+    public static MeshData buildMesh(VoxelChunk center, NeighbourChunks neighbours) {
         SectionCollector opaqueSections = new SectionCollector();
         SectionCollector transparentSections = new SectionCollector();
-        NeighbourSampler neighbours = new NeighbourSampler(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
+        NeighbourSampler sampler = new NeighbourSampler(center,
+                neighbours.plusX(), neighbours.plusY(), neighbours.plusZ(),
+                neighbours.minusX(), neighbours.minusY(), neighbours.minusZ());
 
         for (int x = 0; x < SIZE; x++) {
             for (int y = 0; y < SIZE; y++) {
@@ -71,7 +81,7 @@ public final class ChunkMesher {
                     VoxelType type = center.getVoxel(x, y, z);
                     boolean hasGeometry = type != null && (type.isSolid() || type.isTransparent());
                     if (hasGeometry) {
-                        emitExposedFaces(x, y, z, type, neighbours, opaqueSections, transparentSections);
+                        emitExposedFaces(x, y, z, type, sampler, opaqueSections, transparentSections);
                     }
                 }
             }

@@ -86,7 +86,8 @@ public class MeshManager {
         VoxelChunk minusY = chunkLookup.apply(new ChunkKey(key.cx(), key.cy() - 1, key.cz()));
         VoxelChunk minusZ = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1));
 
-        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ));
+        ChunkMesher.NeighbourChunks neighbours = new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ);
+        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, neighbours));
         if (submitted) {
             renderState.setMeshQueued(true);
         }
@@ -146,7 +147,7 @@ public class MeshManager {
         }
     }
 
-    public void promotePendingMesh(ChunkMeshState renderState, ShaderProgram shader) {
+    void promotePendingMesh(ChunkMeshState renderState, ShaderProgram shader) {
         MeshData pending = renderState.getPendingMeshData();
         if (pending == null) {
             return;

@@ -1,7 +1,14 @@
 package com.example.abyss.world.render.lod;
 
+import com.badlogic.gdx.graphics.GL20;
+import com.badlogic.gdx.graphics.Mesh;
+import com.badlogic.gdx.graphics.VertexAttribute;
+import com.badlogic.gdx.graphics.VertexAttributes;
+import com.badlogic.gdx.graphics.glutils.ShaderProgram;
+import com.example.abyss.util.BudgetedDrainQueue;
 import com.example.abyss.util.KeyedTaskQueue;
 import com.example.abyss.world.meshing.MeshData;
+import com.example.abyss.world.meshing.MeshSectionData;
 import com.example.abyss.world.render.LodRenderEntry;
 
 import java.util.ArrayList;
@@ -19,16 +26,31 @@ import java.util.function.Supplier;
  * the near-field chunk and meshing thread pools without sharing mutable noise state.
  * </p>
  * <p>
- * Call {@link #requestProxyMeshAsync(LodRegionKey, int)} once per region from the
- * streamer, then call {@link #pollCompletedMeshes()} each frame on the main
- * thread to promote finished results into the resident mesh state.
+ * Per-frame call order (GL thread):
+ * <ol>
+ *   <li>{@link #pollCompletedMeshes()} — drains finished CPU mesh data into pending state</li>
+ *   <li>{@link #uploadPendingMeshes(ShaderProgram)} — promotes pending data to GPU meshes, budget-capped</li>
+ *   <li>{@link #getRenderEntries()} — read-only snapshot for the renderer</li>
+ * </ol>
  * </p>
  */
 public class LodProxyManager implements LodProxyPort {
 
+    /**
+     * Maximum wall-clock time spent on LOD mesh uploads per frame.
+     * Sized smaller than near-field (8ms) since LOD regions are less urgent.
+     */
+    private static final long UPLOAD_BUDGET_NANOS = 4_000_000L; // 4 ms
+
     private final Map<LodRegionKey, LodProxyRegion> loadedRegions = new LinkedHashMap<>();
     private final KeyedTaskQueue<LodRegionKey, MeshData> taskQueue;
     private final ThreadLocal<LodProxyGenerator> generatorLocal;
+
+    /**
+     * Regions whose {@link MeshData} is ready but deferred due to budget exhaustion.
+     * Drained before newly completed results each frame so nearest-first ordering is preserved.
+     */
+    private final BudgetedDrainQueue<LodProxyMeshState> promotionQueue = new BudgetedDrainQueue<>();
 
     public LodProxyManager(Supplier<LodProxyGenerator> generatorFactory) {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
@@ -84,7 +106,63 @@ public class LodProxyManager implements LodProxyPort {
             meshState.setMeshQueued(false);
             meshState.setMeshDirty(false);
             meshState.setPendingMeshData(result.value());
+            promotionQueue.enqueue(meshState);
         }
+    }
+
+    /**
+     * Promotes pending CPU mesh data to GPU meshes on the GL thread, budget-capped to
+     * {@link #UPLOAD_BUDGET_NANOS} per frame. Must be called once per frame before
+     * {@link #getRenderEntries()}.
+     */
+    public void uploadPendingMeshes(ShaderProgram shader) {
+        promotionQueue.drain(UPLOAD_BUDGET_NANOS, meshState -> {
+            MeshData pending = meshState.getPendingMeshData();
+            boolean hasPending = pending != null;
+            if (!hasPending) {
+                return;
+            }
+            meshState.setOpaqueMeshes(buildMeshList(pending.opaqueSections(), shader));
+            meshState.setTransparentMeshes(buildMeshList(pending.transparentSections(), shader));
+            meshState.setPendingMeshData(null);
+            meshState.setApproximateMeshMemoryBytes(estimateMeshBytes(pending));
+        });
+    }
+
+    private static List<Mesh> buildMeshList(List<MeshSectionData> sections, ShaderProgram shader) {
+        List<Mesh> meshes = new ArrayList<>();
+        for (MeshSectionData section : sections) {
+            boolean isEmpty = section == null || section.isEmpty();
+            if (isEmpty) {
+                continue;
+            }
+            Mesh mesh = new Mesh(true,
+                    section.vertices().length / MeshData.FLOATS_PER_VERTEX,
+                    section.indices().length,
+                    VertexAttribute.Position(),
+                    VertexAttribute.Normal(),
+                    new VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4, GL20.GL_FLOAT, false, "a_color"));
+            mesh.setVertices(section.vertices());
+            mesh.setIndices(section.indices());
+            boolean canPreUpload = shader != null;
+            if (canPreUpload) {
+                mesh.bind(shader);
+                mesh.unbind(shader);
+            }
+            meshes.add(mesh);
+        }
+        return meshes;
+    }
+
+    private static long estimateMeshBytes(MeshData data) {
+        long bytes = 0L;
+        for (MeshSectionData s : data.opaqueSections()) {
+            bytes += (long) s.vertices().length * Float.BYTES + (long) s.indices().length * Short.BYTES;
+        }
+        for (MeshSectionData s : data.transparentSections()) {
+            bytes += (long) s.vertices().length * Float.BYTES + (long) s.indices().length * Short.BYTES;
+        }
+        return bytes;
     }
 
     // ----------------------------------------------------------------
@@ -119,16 +197,11 @@ public class LodProxyManager implements LodProxyPort {
     }
 
     // ----------------------------------------------------------------
-    // Direct region access (renderer + tests)
+    // Direct region access (tests)
     // ----------------------------------------------------------------
 
     public LodProxyRegion getRegion(LodRegionKey key) {
         return loadedRegions.get(key);
-    }
-
-    /** Returns a live collection of all loaded regions for GL-thread mesh upload. */
-    public Iterable<LodProxyRegion> getLoadedRegionsForUpload() {
-        return loadedRegions.values();
     }
 
     /** Inserts a region directly. Intended for tests and renderer bootstrapping. */

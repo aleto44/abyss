@@ -24,7 +24,7 @@ class ChunkMesherTest {
         VoxelChunk minusY = createChunk( 0, -1,  0, -1f, VoxelType.AIR);
         VoxelChunk minusZ = createChunk( 0,  0, -1, -1f, VoxelType.AIR);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ));
 
         assertTrue(mesh.isEmpty());
     }
@@ -39,7 +39,7 @@ class ChunkMesherTest {
         VoxelChunk minusY = createChunk( 0, -1,  0, 1f, VoxelType.STONE);
         VoxelChunk minusZ = createChunk( 0,  0, -1, 1f, VoxelType.STONE);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ));
 
         assertTrue(mesh.isEmpty());
     }
@@ -54,7 +54,7 @@ class ChunkMesherTest {
         VoxelChunk minusY = createPlaneChunk( 0, -1,  0, 15.5f);
         VoxelChunk minusZ = createPlaneChunk( 0,  0, -1, 15.5f);
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ));
 
         assertFalse(mesh.isEmpty());
         assertTrue(mesh.opaqueIndexCount() > 0);
@@ -85,7 +85,7 @@ class ChunkMesherTest {
             }
         }
 
-        MeshData mesh = ChunkMesher.buildMesh(center, plusX, plusY, plusZ, minusX, minusY, minusZ);
+        MeshData mesh = ChunkMesher.buildMesh(center, new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ));
 
         assertEquals(0, mesh.opaqueIndexCount());
         assertTrue(mesh.transparentIndexCount() > 0);

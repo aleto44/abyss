@@ -148,48 +148,6 @@ public class ChunkLoader {
         return new UnloadStats(toRemove.size(), cancelledPendingCount);
     }
 
-    /**
-     * Unloads any loaded chunk whose chunk-space distance from the given world
-     * position exceeds the specified radii, and cancels any pending (in-flight)
-     * generation tasks that are also out of range. Call periodically as the
-     * player moves to keep memory bounded.
-     */
-    public void unloadDistantChunks(int worldX, int worldY, int worldZ,
-                                    int hRadius, int vRadius) {
-        int pcx = Math.floorDiv(worldX, WorldConstants.CHUNK_SIZE);
-        int pcy = Math.floorDiv(worldY, WorldConstants.CHUNK_SIZE);
-        int pcz = Math.floorDiv(worldZ, WorldConstants.CHUNK_SIZE);
-
-        // Unload already-loaded chunks that are out of range.
-        List<ChunkKey> toRemove = new ArrayList<>();
-        for (VoxelChunk chunk : chunkManager.getLoadedChunks()) {
-            int dx = Math.abs(chunk.getChunkX() - pcx);
-            int dy = Math.abs(chunk.getChunkY() - pcy);
-            int dz = Math.abs(chunk.getChunkZ() - pcz);
-            boolean isOutOfRange = dx > hRadius || dz > hRadius || dy > vRadius;
-            if (isOutOfRange) {
-                toRemove.add(new ChunkKey(chunk.getChunkX(), chunk.getChunkY(), chunk.getChunkZ()));
-            }
-        }
-        for (ChunkKey key : toRemove) {
-            chunkManager.unloadChunk(key.cx(), key.cy(), key.cz());
-        }
-
-        // Cancel pending generation tasks that are also out of range, so worker
-        // threads don't waste CPU and heap on chunks that will be immediately
-        // discarded once they complete.
-        Collection<ChunkKey> pendingKeys = chunkManager.getPendingChunkKeys();
-        for (ChunkKey key : pendingKeys) {
-            int dx = Math.abs(key.cx() - pcx);
-            int dy = Math.abs(key.cy() - pcy);
-            int dz = Math.abs(key.cz() - pcz);
-            boolean isOutOfRange = dx > hRadius || dz > hRadius || dy > vRadius;
-            if (isOutOfRange) {
-                chunkManager.cancelPendingChunk(key.cx(), key.cy(), key.cz());
-            }
-        }
-    }
-
     public record UnloadStats(int unloadedChunkCount, int cancelledPendingCount) {
     }
 }

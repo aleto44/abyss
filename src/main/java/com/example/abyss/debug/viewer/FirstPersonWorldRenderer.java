@@ -57,7 +57,7 @@ public class FirstPersonWorldRenderer {
 
         // Upload any proxy mesh data that arrived this frame before taking the snapshot,
         // so the snapshot captures the freshly-uploaded meshes rather than empty lists.
-        uploadPendingProxyMeshes(world);
+        world.getLodProxyManager().uploadPendingMeshes(shaderProgram);
 
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
@@ -116,66 +116,6 @@ public class FirstPersonWorldRenderer {
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
         lastFrustumCulledChunks = frustumCulled;
-    }
-
-    /**
-     * Uploads any proxy {@link MeshData} that arrived via {@code pollCompletedMeshes()}
-     * this frame. LibGDX {@link Mesh} objects must be created on the GL thread, so this
-     * runs here rather than inside {@code LodProxyManager}.
-     */
-    private void uploadPendingProxyMeshes(AbyssWorld world) {
-        for (LodProxyRegion region : world.getLodProxyManager().getLoadedRegionsForUpload()) {
-            LodProxyMeshState meshState = region.meshState();
-            MeshData pending = meshState.getPendingMeshData();
-            boolean hasPendingData = pending != null;
-            if (!hasPendingData) {
-                continue;
-            }
-            List<Mesh> opaqueMeshes = buildMeshList(pending.opaqueSections());
-            List<Mesh> transparentMeshes = buildMeshList(pending.transparentSections());
-            meshState.setOpaqueMeshes(opaqueMeshes);
-            meshState.setTransparentMeshes(transparentMeshes);
-            meshState.setPendingMeshData(null);
-
-            long approxBytes = estimateMeshBytes(pending);
-            meshState.setApproximateMeshMemoryBytes(approxBytes);
-        }
-    }
-
-    private List<Mesh> buildMeshList(List<MeshSectionData> sections) {
-        List<Mesh> meshes = new ArrayList<>();
-        for (MeshSectionData section : sections) {
-            boolean isEmpty = section == null || section.isEmpty();
-            if (isEmpty) {
-                continue;
-            }
-            float[] vertices = section.vertices();
-            short[] indices  = section.indices();
-            Mesh mesh = new Mesh(true,
-                    vertices.length / MeshData.FLOATS_PER_VERTEX,
-                    indices.length,
-                    VertexAttribute.Position(),
-                    VertexAttribute.Normal(),
-                    new VertexAttribute(VertexAttributes.Usage.ColorUnpacked, 4,
-                            GL20.GL_FLOAT, false, "a_color"));
-            mesh.setVertices(vertices);
-            mesh.setIndices(indices);
-            mesh.bind(shaderProgram);
-            mesh.unbind(shaderProgram);
-            meshes.add(mesh);
-        }
-        return meshes;
-    }
-
-    private static long estimateMeshBytes(MeshData data) {
-        long bytes = 0L;
-        for (MeshSectionData s : data.opaqueSections()) {
-            bytes += (long) s.vertices().length * Float.BYTES + (long) s.indices().length * Short.BYTES;
-        }
-        for (MeshSectionData s : data.transparentSections()) {
-            bytes += (long) s.vertices().length * Float.BYTES + (long) s.indices().length * Short.BYTES;
-        }
-        return bytes;
     }
 
     public void dispose() {
