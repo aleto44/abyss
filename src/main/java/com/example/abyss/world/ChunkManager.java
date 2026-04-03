@@ -68,6 +68,11 @@ public class ChunkManager {
         return new LoadedChunk(chunk, new ChunkMeshState());
     }
 
+    private VoxelChunk registerChunk(ChunkKey key, VoxelChunk chunk) {
+        loaded.put(key, createLoadedChunk(chunk));
+        return chunk;
+    }
+
     // ----------------------------------------------------------------
     // Synchronous access (blocks if chunk is not yet loaded)
     // ----------------------------------------------------------------
@@ -90,13 +95,10 @@ public class ChunkManager {
 
         VoxelChunk awaited = taskQueue.awaitPending(key);
         if (awaited != null) {
-            loaded.put(key, createLoadedChunk(awaited));
-            return awaited;
+            return registerChunk(key, awaited);
         }
 
-        VoxelChunk chunk = taskQueue.computeNow(() -> buildChunk(key));
-        loaded.put(key, createLoadedChunk(chunk));
-        return chunk;
+        return registerChunk(key, taskQueue.computeNow(() -> buildChunk(key)));
     }
 
     /**
@@ -104,15 +106,16 @@ public class ChunkManager {
      * Never blocks, never triggers generation.
      */
     public VoxelChunk getChunk(int cx, int cy, int cz) {
-        LoadedChunk loadedChunk = loaded.get(new ChunkKey(cx, cy, cz));
-        return loadedChunk != null ? loadedChunk.chunk() : null;
+        return getChunk(new ChunkKey(cx, cy, cz));
     }
 
+    /** Returns the loaded chunk, or {@code null} if it isn't loaded yet. Never blocks. */
     public VoxelChunk getChunk(ChunkKey key) {
         LoadedChunk loadedChunk = loaded.get(key);
         return loadedChunk != null ? loadedChunk.chunk() : null;
     }
 
+    /** Returns the full loaded chunk record, or {@code null} if not loaded. */
     public LoadedChunk getLoadedChunk(ChunkKey key) {
         return loaded.get(key);
     }
@@ -174,6 +177,10 @@ public class ChunkManager {
         return justLoaded;
     }
 
+    // ----------------------------------------------------------------
+    // Meshing
+    // ----------------------------------------------------------------
+
     public boolean requestChunkMesh(ChunkKey key) {
         return meshManager.requestMesh(key, this::getLoadedChunk, this::getChunk);
     }
@@ -214,15 +221,12 @@ public class ChunkManager {
      */
     public void cancelPendingChunk(int cx, int cy, int cz) {
         ChunkKey key = new ChunkKey(cx, cy, cz);
-        boolean isLoaded = loaded.containsKey(key);
-        if (!isLoaded) {
+        if (!loaded.containsKey(key)) {
             taskQueue.forget(key);
         }
     }
 
-    /**
-     * Returns all chunk keys currently pending generation (submitted but not yet drained).
-     */
+    /** Returns all chunk keys currently pending generation (submitted but not yet drained). */
     public Collection<ChunkKey> getPendingChunkKeys() {
         return taskQueue.getPendingKeys();
     }
@@ -238,17 +242,14 @@ public class ChunkManager {
 
     /** All chunks currently in memory (read-only snapshot). */
     public Collection<VoxelChunk> getLoadedChunks() {
-        List<VoxelChunk> chunks = new ArrayList<>(loaded.size());
-        for (LoadedChunk loadedChunk : loaded.values()) {
-            chunks.add(loadedChunk.chunk());
-        }
-        return Collections.unmodifiableList(chunks);
+        return loaded.values().stream()
+                .map(LoadedChunk::chunk)
+                .toList();
     }
 
     /**
      * Returns a live, non-copying view of all loaded chunk records.
-     * Suitable for read-only iteration on the main thread where no snapshot
-     * is needed (e.g. per-frame mesh sweeps).
+     * Suitable for read-only iteration on the main thread where no snapshot is needed (e.g. per-frame mesh sweeps).
      */
     public Iterable<LoadedChunk> iterateLoadedChunks() {
         return loaded.values();
