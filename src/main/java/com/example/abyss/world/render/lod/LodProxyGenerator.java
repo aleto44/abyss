@@ -15,8 +15,8 @@ import java.util.List;
 /**
  * Generates a coarse top-surface proxy mesh for a far-field proxy region.
  * <p>
- * Each proxy region spans {@value #REGION_CHUNKS_H}×{@value #REGION_CHUNKS_H}×{@value #REGION_CHUNKS_H}
- * chunks. All chunks in the region are generated via {@link ProceduralGenerator} — the same
+ * Each proxy region spans {@link WorldConstants#REGION_CHUNKS} chunks on all three axes.
+ * All chunks in the region are generated via {@link ProceduralGenerator} — the same
  * pipeline used for near-field chunks — then scanned top-down per XZ column at
  * {@value #SAMPLE_STEP}-voxel intervals to find the highest solid voxel. One upward-facing
  * quad is emitted per column at that height, plus side-wall quads where adjacent columns
@@ -30,11 +30,8 @@ public final class LodProxyGenerator {
     // Region geometry — easy to tune
     // ---------------------------------------------------------------
 
-    /** Chunk span of one proxy region on all three axes (cubic region). */
-    public static final int REGION_CHUNKS_H = 4;
-
     /** World-voxel size of one proxy region on all three axes. */
-    public static final int REGION_VOXELS_H = REGION_CHUNKS_H * WorldConstants.CHUNK_SIZE;
+    public static final int REGION_VOXELS_H = WorldConstants.REGION_CHUNKS * WorldConstants.CHUNK_SIZE;
 
     /**
      * Voxels between LOD surface samples (XZ step size for quad emission).
@@ -85,9 +82,9 @@ public final class LodProxyGenerator {
      * @return CPU-side mesh data, or {@link MeshData#EMPTY} if the region has no surface
      */
     public MeshData generate(LodRegionKey key) {
-        int baseChunkX = key.regionX() * REGION_CHUNKS_H;
-        int baseChunkY = key.regionY() * REGION_CHUNKS_H;
-        int baseChunkZ = key.regionZ() * REGION_CHUNKS_H;
+        int baseChunkX = key.regionX() * WorldConstants.REGION_CHUNKS;
+        int baseChunkY = key.regionY() * WorldConstants.REGION_CHUNKS;
+        int baseChunkZ = key.regionZ() * WorldConstants.REGION_CHUNKS;
 
         int worldBaseX = baseChunkX * WorldConstants.CHUNK_SIZE;
         int worldBaseY = baseChunkY * WorldConstants.CHUNK_SIZE;
@@ -106,11 +103,12 @@ public final class LodProxyGenerator {
      * Indexed as {@code chunksByY[dcy][dcz * REGION_CHUNKS_H + dcx]}.
      */
     private VoxelData[][] generateRegionChunks(int baseChunkX, int baseChunkY, int baseChunkZ) {
-        VoxelData[][] chunksByY = new VoxelData[REGION_CHUNKS_H][REGION_CHUNKS_H * REGION_CHUNKS_H];
-        for (int dcy = 0; dcy < REGION_CHUNKS_H; dcy++) {
-            for (int dcz = 0; dcz < REGION_CHUNKS_H; dcz++) {
-                for (int dcx = 0; dcx < REGION_CHUNKS_H; dcx++) {
-                    chunksByY[dcy][dcz * REGION_CHUNKS_H + dcx] = proceduralGenerator.generateChunk(
+        int rc = WorldConstants.REGION_CHUNKS;
+        VoxelData[][] chunksByY = new VoxelData[rc][rc * rc];
+        for (int dcy = 0; dcy < rc; dcy++) {
+            for (int dcz = 0; dcz < rc; dcz++) {
+                for (int dcx = 0; dcx < rc; dcx++) {
+                    chunksByY[dcy][dcz * rc + dcx] = proceduralGenerator.generateChunk(
                             baseChunkX + dcx,
                             baseChunkY + dcy,
                             baseChunkZ + dcz
@@ -273,10 +271,11 @@ public final class LodProxyGenerator {
                                    int wx, int wz,
                                    int worldBaseX, int worldBaseY, int worldBaseZ) {
         int size = WorldConstants.CHUNK_SIZE;
-        for (int dcy = REGION_CHUNKS_H - 1; dcy >= 0; dcy--) {
+        int rc = WorldConstants.REGION_CHUNKS;
+        for (int dcy = rc - 1; dcy >= 0; dcy--) {
             int dcx = (wx - worldBaseX) / size;
             int dcz = (wz - worldBaseZ) / size;
-            VoxelData chunk = chunksByY[dcy][dcz * REGION_CHUNKS_H + dcx];
+            VoxelData chunk = chunksByY[dcy][dcz * rc + dcx];
             int lx = (wx - worldBaseX) % size;
             int lz = (wz - worldBaseZ) % size;
             for (int ly = size - 1; ly >= 0; ly--) {
@@ -298,18 +297,19 @@ public final class LodProxyGenerator {
                               int localX, int wy, int localZ,
                               int worldBaseY) {
         int size = WorldConstants.CHUNK_SIZE;
+        int rc = WorldConstants.REGION_CHUNKS;
         int dcy = (wy - worldBaseY) / size;
         int dcx = localX / size;
         int dcz = localZ / size;
 
-        boolean outOfBounds = dcy < 0 || dcy >= REGION_CHUNKS_H
-                || dcx < 0 || dcx >= REGION_CHUNKS_H
-                || dcz < 0 || dcz >= REGION_CHUNKS_H;
+        boolean outOfBounds = dcy < 0 || dcy >= rc
+                || dcx < 0 || dcx >= rc
+                || dcz < 0 || dcz >= rc;
         if (outOfBounds) {
             return Color.GRAY;
         }
 
-        VoxelData chunk = chunksByY[dcy][dcz * REGION_CHUNKS_H + dcx];
+        VoxelData chunk = chunksByY[dcy][dcz * rc + dcx];
         VoxelType type = chunk.getType(
                 localX % size,
                 (wy - worldBaseY) % size,

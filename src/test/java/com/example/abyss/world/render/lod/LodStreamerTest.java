@@ -17,9 +17,9 @@ class LodStreamerTest {
      * A region at region-coords (2, 0, 2) should be removed when the player stands at world origin
      * (region (0,0,0)), because it falls inside the near-field exclusion cylinder.
      * <p>
-     * With hRadius=14, vRadius=8, REGION_VOXELS_H=128:
-     *   exclusionHRadius = ceil(14 * 32 / 128) = 4
-     *   dx=2 < 4 and dz=2 < 4 → inside exclusion → no longer in LOD band → must be unloaded.
+     * With hRadius=14, WorldConstants.REGION_CHUNKS=4, REGION_VOXELS_H=128:
+     *   LOD_EXCLUSION_H_REGIONS = ceil((14 + 4) * 32 / 128) = ceil(4.5) = 5
+     *   dx=2 < 5 and dz=2 < 5 → inside exclusion → no longer in LOD band → must be unloaded.
      */
     @Test
     void regionInsideNearChunkRangeIsUnloadedOnUnloadTick() {
@@ -29,10 +29,10 @@ class LodStreamerTest {
         float worldZ = 2 * regionVoxelSize;
 
         LodRegionKey loadedKey = new LodRegionKey(2, 0, 2, 1);
-        LodRenderEntry entry = new LodRenderEntry(worldX, worldY, worldZ, 1, List.of(), List.of());
+        LodProxyRegion region = new LodProxyRegion(loadedKey, worldX, worldY, worldZ, new LodProxyMeshState());
 
-        TrackingLodProxyManager proxyManager = new TrackingLodProxyManager(List.of(entry));
-        // hRadius=14, vRadius=8 → exclusionHRadius = ceil(14*32/128) = 4; region (2,0,2): dx=2 < 4 → inside exclusion
+        TrackingLodProxyManager proxyManager = new TrackingLodProxyManager(List.of(region));
+        // hRadius=14 → LOD_EXCLUSION_H_CHUNKS = ceil(14/4)*4 = 16 → exclusionHRadius = 4 regions; region (2,0,2): dx=2 < 4 → inside exclusion
         CylinderStreamer cylinderStreamer = new CylinderStreamer(14, 8, 20, 12);
         LodStreamer streamer = new LodStreamer(proxyManager, cylinderStreamer);
 
@@ -56,11 +56,11 @@ class LodStreamerTest {
     }
 
     private static final class TrackingLodProxyManager extends LodProxyManager {
-        private final List<LodRenderEntry> entries;
+        private final List<LodProxyRegion> regions;
         final List<LodRegionKey> removedKeys = new ArrayList<>();
 
-        TrackingLodProxyManager(List<LodRenderEntry> entries) {
-            this.entries = entries;
+        TrackingLodProxyManager(List<LodProxyRegion> regions) {
+            this.regions = regions;
         }
 
         @Override
@@ -83,8 +83,8 @@ class LodStreamerTest {
         }
 
         @Override
-        public List<LodRenderEntry> getRenderEntries() {
-            return entries;
+        public Iterable<LodProxyRegion> getLoadedRegionsForUpload() {
+            return regions;
         }
     }
 

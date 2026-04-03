@@ -73,7 +73,14 @@ public class LodProxyManager {
         if (alreadyLoaded) {
             return false;
         }
-        return taskQueue.submit(key, () -> generatorLocal.get().generate(key), priority);
+        boolean submitted = taskQueue.submit(key, () -> generatorLocal.get().generate(key), priority);
+        if (submitted) {
+            float worldX = key.regionX() * LodProxyGenerator.REGION_VOXELS_H;
+            float worldY = key.regionY() * LodProxyGenerator.REGION_VOXELS_H;
+            float worldZ = key.regionZ() * LodProxyGenerator.REGION_VOXELS_H;
+            loadedRegions.put(key, new LodProxyRegion(key, worldX, worldY, worldZ, new LodProxyMeshState()));
+        }
+        return submitted;
     }
 
     /**
@@ -102,23 +109,13 @@ public class LodProxyManager {
         List<KeyedTaskQueue.Result<LodRegionKey, MeshData>> results = taskQueue.pollCompleted();
         for (KeyedTaskQueue.Result<LodRegionKey, MeshData> result : results) {
             LodRegionKey key = result.key();
-            boolean stillWanted = loadedRegions.containsKey(key) || !result.value().isEmpty();
+            LodProxyRegion existing = loadedRegions.get(key);
+            boolean stillWanted = existing != null;
             if (!stillWanted) {
                 continue;
             }
 
-            LodProxyRegion existing = loadedRegions.get(key);
-            LodProxyMeshState meshState;
-            if (existing != null) {
-                meshState = existing.meshState();
-            } else {
-                float worldX = key.regionX() * LodProxyGenerator.REGION_VOXELS_H;
-                float worldY = key.regionY() * LodProxyGenerator.REGION_VOXELS_H;
-                float worldZ = key.regionZ() * LodProxyGenerator.REGION_VOXELS_H;
-                meshState = new LodProxyMeshState();
-                loadedRegions.put(key, new LodProxyRegion(key, worldX, worldY, worldZ, meshState));
-            }
-
+            LodProxyMeshState meshState = existing.meshState();
             MeshData meshData = result.value();
             meshState.setMeshQueued(false);
             meshState.setMeshDirty(false);

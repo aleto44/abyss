@@ -20,6 +20,35 @@ import java.util.Comparator;
  */
 public final class CylinderStreamer {
 
+  /** Horizontal radius within which LOD is suppressed, in chunks. Rounded up to the nearest whole region.
+   *  Equals ceil(NEAR_FIELD_H_RADIUS / REGION_CHUNKS) * REGION_CHUNKS so that the first LOD region
+   *  starts exactly where the near-field border shell ends (hRadius + 1 == LOD_EXCLUSION_H_CHUNKS). */
+  public static final int LOD_EXCLUSION_H_CHUNKS =
+      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_H_RADIUS
+          / WorldConstants.REGION_CHUNKS) * WorldConstants.REGION_CHUNKS;
+
+  /** Vertical radius within which LOD is suppressed, in chunks. Same derivation as LOD_EXCLUSION_H_CHUNKS. */
+  public static final int LOD_EXCLUSION_V_CHUNKS =
+      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_V_RADIUS
+          / WorldConstants.REGION_CHUNKS) * WorldConstants.REGION_CHUNKS;
+
+  static {
+    boolean hBandTooSmall = WorldConstants.LOD_BAND_H_RADIUS <= LOD_EXCLUSION_H_CHUNKS;
+    boolean vBandTooSmall = WorldConstants.LOD_BAND_V_RADIUS <= LOD_EXCLUSION_V_CHUNKS;
+    if (hBandTooSmall) {
+      throw new IllegalStateException(
+          "LOD_BAND_H_RADIUS (" + WorldConstants.LOD_BAND_H_RADIUS
+          + ") must be greater than LOD_EXCLUSION_H_CHUNKS (" + LOD_EXCLUSION_H_CHUNKS
+          + "). Increase LOD_BAND_H_RADIUS or decrease NEAR_FIELD_H_RADIUS.");
+    }
+    if (vBandTooSmall) {
+      throw new IllegalStateException(
+          "LOD_BAND_V_RADIUS (" + WorldConstants.LOD_BAND_V_RADIUS
+          + ") must be greater than LOD_EXCLUSION_V_CHUNKS (" + LOD_EXCLUSION_V_CHUNKS
+          + "). Increase LOD_BAND_V_RADIUS or decrease NEAR_FIELD_V_RADIUS.");
+    }
+  }
+
   private final int hRadius;
   private final int vRadius;
   private final int bandHRadius;
@@ -52,19 +81,8 @@ public final class CylinderStreamer {
   /**
    * Returns {@code true} if the region-space offset falls within the LOD band cylinder —
    * i.e. inside the outer band cylinder but outside the near-field exclusion cylinder.
-   * The exclusion boundary is derived from the near-field chunk radii converted to region-space.
-   * <p>
-   * A region is excluded only when it is <em>fully</em> covered by the near-field cylinder.
-   * Strict less-than ({@code <}) is used so that the first region touching the near-field
-   * boundary is included in the LOD band, closing the gap between the two streaming
-   * representations. With {@code <=} the region at {@code adx == exclusionHRadius} would be
-   * excluded even though near-field only covers up to chunk {@code hRadius - 1}, leaving a
-   * full region-width strip with no coverage on either side.
-   * </p>
-   *
-   * @param regionSize voxels per region side, used to convert near-field chunk radii to region-space
    */
-  public boolean isInLodBand(int dx, int dy, int dz, int regionSize) {
+  public boolean isInLodBand(int dx, int dy, int dz) {
     int adx = Math.abs(dx);
     int adz = Math.abs(dz);
     boolean isInsideOuterCylinder = adx <= bandHRadius && adz <= bandHRadius
@@ -72,21 +90,11 @@ public final class CylinderStreamer {
     if (!isInsideOuterCylinder) {
       return false;
     }
-    int exclusionHRadius = (int) Math.ceil((double) hRadius * WorldConstants.CHUNK_SIZE / regionSize);
-    int exclusionVRadius = (int) Math.ceil((double) vRadius * WorldConstants.CHUNK_SIZE / regionSize);
-    // Strict less-than: exclude only regions fully inside the near-field cylinder.
+    int exclusionHRadius = LOD_EXCLUSION_H_CHUNKS / WorldConstants.REGION_CHUNKS;
+    int exclusionVRadius = LOD_EXCLUSION_V_CHUNKS / WorldConstants.REGION_CHUNKS;
     boolean isInsideExclusionCylinder = adx < exclusionHRadius && adz < exclusionHRadius
         && dy > -exclusionVRadius && dy < exclusionVRadius;
     return !isInsideExclusionCylinder;
-  }
-
-  /**
-   * Returns {@code true} if the region-space offset is outside the LOD band keep-zone
-   * (band cylinder + 1 region padding on all sides).
-   */
-  public boolean isOutsideLodBand(int dx, int dy, int dz) {
-    return Math.abs(dx) > bandHRadius + 1 || Math.abs(dz) > bandHRadius + 1
-        || dy > bandVRadius + 1 || dy < -bandVRadius - 1;
   }
 
   public boolean isOutsideKeepZone(int dx, int dy, int dz, int horizontalPadding, int verticalPadding) {

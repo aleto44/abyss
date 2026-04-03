@@ -61,8 +61,8 @@ public class AbyssWorld implements WorldRenderSource {
     CylinderStreamer cylinderStreamer = new CylinderStreamer(
         WorldConstants.NEAR_FIELD_H_RADIUS,
         WorldConstants.NEAR_FIELD_V_RADIUS,
-        WorldConstants.DEFAULT_BAND_H_RADIUS,
-        WorldConstants.DEFAULT_BAND_V_RADIUS
+        WorldConstants.LOD_BAND_H_RADIUS / WorldConstants.REGION_CHUNKS,
+        WorldConstants.LOD_BAND_V_RADIUS / WorldConstants.REGION_CHUNKS
     );
     chunkStreamer = new NearChunkStreamer(chunkLoader, cylinderStreamer);
     lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(seed, resolver));

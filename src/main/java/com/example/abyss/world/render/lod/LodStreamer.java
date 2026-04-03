@@ -3,7 +3,6 @@ package com.example.abyss.world.render.lod;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
 import com.example.abyss.world.render.CylinderStreamer;
-import com.example.abyss.world.render.LodRenderEntry;
 import com.example.abyss.world.render.StreamingSubmissionBudget;
 
 import java.util.ArrayList;
@@ -18,17 +17,13 @@ import java.util.List;
  * LOD streamers stay consistent without coupling this class to a concrete
  * near-field implementation.
  * </p>
- * <p>
- * Proxy regions are expressed in region-space coordinates where one region spans
- * {@link LodProxyGenerator#REGION_CHUNKS_H} chunks on all three axes (cubic region).
- * </p>
  */
 public class LodStreamer {
     // ---------------------------------------------------------------
     // Timing constants — mirror NearChunkStreamer's discipline
     // ---------------------------------------------------------------
 
-    private static final float UNLOAD_INTERVAL_SECONDS          = 4.0f;
+    private static final float UNLOAD_INTERVAL_SECONDS          = 2.0f;
     private static final float MOVEMENT_SWEEP_THRESHOLD         = 1.0f;
     private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS  = 0.5f;
     private static final float IDLE_RESWEEP_INTERVAL_SECONDS    = 0.1f;
@@ -57,6 +52,10 @@ public class LodStreamer {
     private int lastSweptRy = Integer.MIN_VALUE;
     private int lastSweptRz = Integer.MIN_VALUE;
 
+    private int lastUnloadedRx = Integer.MIN_VALUE;
+    private int lastUnloadedRy = Integer.MIN_VALUE;
+    private int lastUnloadedRz = Integer.MIN_VALUE;
+
     private float unloadTimer;
     private float movementSweepTimer;
     private float idleResweepTimer = IDLE_RESWEEP_INTERVAL_SECONDS;
@@ -80,8 +79,8 @@ public class LodStreamer {
 
     void updateForPosition(Vector3 observerPosition, float deltaTime) {
         proxyManager.pollCompletedMeshes();
-        sweepProxyBand(observerPosition, deltaTime);
         maybeUnloadDistantRegions(observerPosition, deltaTime);
+        sweepProxyBand(observerPosition, deltaTime);
     }
 
     // ---------------------------------------------------------------
@@ -125,7 +124,7 @@ public class LodStreamer {
         for (int dy = -bandVRadius; dy <= bandVRadius; dy++) {
             for (int dz = -bandHRadius; dz <= bandHRadius; dz++) {
                 for (int dx = -bandHRadius; dx <= bandHRadius; dx++) {
-                    boolean isInBand = cylinderStreamer.isInLodBand(dx, dy, dz, REGION_SIZE);
+                    boolean isInBand = cylinderStreamer.isInLodBand(dx, dy, dz);
                     if (!isInBand) {
                         continue;
                     }
@@ -160,23 +159,33 @@ public class LodStreamer {
     // ---------------------------------------------------------------
 
     private void maybeUnloadDistantRegions(Vector3 observerPosition, float deltaTime) {
-        unloadTimer += deltaTime;
-        boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
-        if (!isTimeToUnload) {
-            return;
-        }
-        unloadTimer = 0f;
-
         int rx = worldToRegion(Math.round(observerPosition.x));
         int ry = worldToRegion(Math.round(observerPosition.y));
         int rz = worldToRegion(Math.round(observerPosition.z));
+
+        boolean regionChanged = rx != lastUnloadedRx || ry != lastUnloadedRy || rz != lastUnloadedRz;
+
+        unloadTimer += deltaTime;
+        boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
+
+        boolean shouldUnload = regionChanged || isTimeToUnload;
+        if (!shouldUnload) {
+            return;
+        }
+
+        if (isTimeToUnload) {
+            unloadTimer = 0f;
+        }
+        lastUnloadedRx = rx;
+        lastUnloadedRy = ry;
+        lastUnloadedRz = rz;
 
         List<LodRegionKey> toRemove = new ArrayList<>();
         for (LodRegionKey key : getLoadedRegionKeys()) {
             int dx = key.regionX() - rx;
             int dy = key.regionY() - ry;
             int dz = key.regionZ() - rz;
-            boolean isNoLongerInBand = !cylinderStreamer.isInLodBand(dx, dy, dz, REGION_SIZE);
+            boolean isNoLongerInBand = !cylinderStreamer.isInLodBand(dx, dy, dz);
             if (isNoLongerInBand) {
                 toRemove.add(key);
             }
@@ -190,13 +199,8 @@ public class LodStreamer {
 
     private List<LodRegionKey> getLoadedRegionKeys() {
         List<LodRegionKey> keys = new ArrayList<>();
-        for (LodRenderEntry entry : proxyManager.getRenderEntries()) {
-            keys.add(new LodRegionKey(
-                    worldToRegion(Math.round(entry.worldX())),
-                    worldToRegion(Math.round(entry.worldY())),
-                    worldToRegion(Math.round(entry.worldZ())),
-                    entry.lodLevel()
-            ));
+        for (LodProxyRegion region : proxyManager.getLoadedRegionsForUpload()) {
+            keys.add(region.key());
         }
         return keys;
     }

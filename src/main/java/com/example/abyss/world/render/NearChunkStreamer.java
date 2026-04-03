@@ -155,7 +155,7 @@ public class NearChunkStreamer {
       int deltaX = key.cx() - pcx;
       int deltaY = key.cy() - pcy;
       int deltaZ = key.cz() - pcz;
-      return cylinderStreamer.isOutsideKeepZone(deltaX, deltaY, deltaZ, 1, 0);
+      return cylinderStreamer.isOutsideKeepZone(deltaX, deltaY, deltaZ, 1, 1);
     });
     return UnloadOutcome.triggered(unloadStats.unloadedChunkCount(), unloadStats.cancelledPendingCount());
   }
@@ -187,9 +187,15 @@ public class NearChunkStreamer {
     List<int[]> candidates = new ArrayList<>();
     int horizontalRadius = cylinderStreamer.getHRadius();
     int verticalRadius = cylinderStreamer.getVRadius();
-    for (int dy = -verticalRadius; dy <= verticalRadius; dy++) {
-      for (int dz = -horizontalRadius; dz <= horizontalRadius; dz++) {
-        for (int dx = -horizontalRadius; dx <= horizontalRadius; dx++) {
+    // Load one extra shell beyond the visible radius so that every chunk on the
+    // outermost renderable ring has all six face-neighbours present. Without these
+    // border chunks the SameResolutionNeighbourPolicy blocks meshing on the boundary
+    // layer, making the outermost radius worth of chunks permanently invisible.
+    int loadHRadius = horizontalRadius + 1;
+    int loadVRadius = verticalRadius + 1;
+    for (int dy = -loadVRadius; dy <= loadVRadius; dy++) {
+      for (int dz = -loadHRadius; dz <= loadHRadius; dz++) {
+        for (int dx = -loadHRadius; dx <= loadHRadius; dx++) {
           candidates.add(new int[]{pcx + dx, pcy + dy, pcz + dz});
         }
       }

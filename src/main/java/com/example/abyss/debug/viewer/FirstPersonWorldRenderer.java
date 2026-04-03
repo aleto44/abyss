@@ -29,6 +29,9 @@ import java.util.function.Function;
  */
 public class FirstPersonWorldRenderer {
 
+    private static final float[] TINT_NORMAL = { 1.0f, 1.0f, 1.0f };
+    private static final float[] TINT_LOD    = { 0.72f, 0.85f, 1.0f };
+
     private final Matrix4 modelMatrix = new Matrix4();
     private final Matrix4 modelViewProjectionMatrix = new Matrix4();
     private final ChunkCuller chunkCuller = new ChunkCuller();
@@ -69,7 +72,7 @@ public class FirstPersonWorldRenderer {
                 frustumCulled++;
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_NORMAL);
         }
 
         // --- Far-field opaque pass ---
@@ -81,7 +84,7 @@ public class FirstPersonWorldRenderer {
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_LOD);
         }
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -94,7 +97,7 @@ public class FirstPersonWorldRenderer {
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_NORMAL);
         }
 
         // --- Far-field transparent pass ---
@@ -106,7 +109,7 @@ public class FirstPersonWorldRenderer {
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes);
+            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_LOD);
         }
 
         Gdx.gl.glDepthMask(true);
@@ -180,17 +183,19 @@ public class FirstPersonWorldRenderer {
     }
 
     private void renderChunkMeshes(RenderMeshSource entry, PerspectiveCamera camera,
-                                   Function<RenderMeshSource, List<Mesh>> meshSelector) {
-        setChunkTransform(entry, camera);
+                                   Function<RenderMeshSource, List<Mesh>> meshSelector,
+                                   float[] tint) {
+        setChunkTransform(entry, camera, tint);
         for (Mesh mesh : meshSelector.apply(entry)) {
             renderMesh(mesh);
         }
     }
 
-    private void setChunkTransform(RenderMeshSource entry, PerspectiveCamera camera) {
+    private void setChunkTransform(RenderMeshSource entry, PerspectiveCamera camera, float[] tint) {
         modelMatrix.idt().setTranslation(entry.worldX(), entry.worldY(), entry.worldZ());
         modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
         shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
+        shaderProgram.setUniform3fv("u_lodTint", tint, 0, 3);
     }
 
     private void renderMesh(Mesh mesh) {

@@ -24,11 +24,12 @@ class NearChunkStreamerTest {
         ChunkStreamingStats stats = streamer.getLastStats();
         assertTrue(stats.sweepTriggered());
         assertEquals(ChunkStreamingSweepReason.INITIAL, stats.lastSweepReason());
-        assertEquals(9, stats.candidatesConsidered());
-        assertEquals(9, stats.submittedThisUpdate());
+        // loadHRadius = hRadius+1 = 2, loadVRadius = vRadius+1 = 1 → 5*3*5 = 75
+        assertEquals(75, stats.candidatesConsidered());
+        assertEquals(75, stats.submittedThisUpdate());
         assertEquals(0, stats.skippedKnownThisUpdate());
         assertEquals(1L, stats.totalSweepCount());
-        assertEquals(9L, stats.totalSubmittedCount());
+        assertEquals(75L, stats.totalSubmittedCount());
         assertEquals(0L, stats.totalSkippedKnownCount());
     }
 
@@ -44,12 +45,13 @@ class NearChunkStreamerTest {
         ChunkStreamingStats stats = streamer.getLastStats();
         assertTrue(stats.sweepTriggered());
         assertEquals(ChunkStreamingSweepReason.IDLE_RESWEEP, stats.lastSweepReason());
-        assertEquals(9, stats.candidatesConsidered());
+        // loadHRadius = 2, loadVRadius = 1 → 5*3*5 = 75
+        assertEquals(75, stats.candidatesConsidered());
         assertEquals(0, stats.submittedThisUpdate());
-        assertEquals(9, stats.skippedKnownThisUpdate());
+        assertEquals(75, stats.skippedKnownThisUpdate());
         assertEquals(2L, stats.totalSweepCount());
-        assertEquals(9L, stats.totalSubmittedCount());
-        assertEquals(9L, stats.totalSkippedKnownCount());
+        assertEquals(75L, stats.totalSubmittedCount());
+        assertEquals(75L, stats.totalSkippedKnownCount());
     }
 
     @Test
@@ -102,6 +104,16 @@ class NearChunkStreamerTest {
         @Override
         public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ) {
             return requestedKeys.add(new ChunkKey(chunkX, chunkY, chunkZ));
+        }
+
+        @Override
+        public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ, int priority) {
+            return requestedKeys.add(new ChunkKey(chunkX, chunkY, chunkZ));
+        }
+
+        @Override
+        public void reprioritiseChunkAsync(int chunkX, int chunkY, int chunkZ, int newPriority) {
+            // no-op in fake
         }
 
         @Override
