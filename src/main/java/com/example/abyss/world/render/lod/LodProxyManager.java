@@ -56,7 +56,7 @@ public class LodProxyManager implements LodProxyPort {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<LodRegionKey, MeshData>builder()
                 .threadNamePrefix("LodProxyGen")
-                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors()))
+                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors() / 2))
                 .build();
     }
 

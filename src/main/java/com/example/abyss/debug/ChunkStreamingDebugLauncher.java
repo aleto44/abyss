@@ -15,6 +15,8 @@ public final class ChunkStreamingDebugLauncher {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setWindowedMode(1280, 800);
         config.setTitle("Abyss - Chunk Streaming Debug");
+        config.setForegroundFPS(144);
+        config.setIdleFPS(30);
         new Lwjgl3Application(new ChunkStreamingDebugApp(), config);
     }
 }

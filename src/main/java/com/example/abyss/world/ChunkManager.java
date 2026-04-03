@@ -53,7 +53,7 @@ public class ChunkManager {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<ChunkKey, VoxelChunk>builder()
                 .threadNamePrefix("ChunkGen")
-                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors()))
+                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors() / 2))
                 .build();
         this.meshManager = new MeshManager();
     }

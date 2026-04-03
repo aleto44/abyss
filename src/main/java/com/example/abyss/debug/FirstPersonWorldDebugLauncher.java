@@ -15,6 +15,8 @@ public final class FirstPersonWorldDebugLauncher {
         Lwjgl3ApplicationConfiguration config = new Lwjgl3ApplicationConfiguration();
         config.setWindowedMode(1440, 900);
         config.setTitle("Abyss - First Person World Debug");
+        config.setForegroundFPS(144);
+        config.setIdleFPS(30);
         new Lwjgl3Application(new FirstPersonWorldDebugApp(), config);
     }
 }
