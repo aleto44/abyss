@@ -60,7 +60,7 @@ public class LodProxyManager implements LodProxyPort {
 
     @Override
     public void reprioritiseProxyMeshAsync(LodRegionKey key, int newPriority) {
-        taskQueue.reprioritise(key, () -> generatorLocal.get().generate(key), newPriority);
+        taskQueue.reprioritise(key, newPriority);
     }
 
     @Override

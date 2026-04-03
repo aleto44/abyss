@@ -42,16 +42,14 @@ import java.util.function.Supplier;
 public class KeyedTaskQueue<K, V> {
 
     /**
-     * Holds both the future and the queued task reference together so
-     * {@link #reprioritise} can attempt to remove the task from the pool queue.
+     * Holds the future, the queued task, and the original work supplier together.
+     * The supplier is kept so {@link #reprioritise} can rebuild a task without
+     * requiring the caller to re-provide it.
      */
-    private record PendingEntry<V>(CompletableFuture<V> future, PrioritizedTask<V> task) {}
+    private record PendingEntry<V>(CompletableFuture<V> future, PrioritizedTask<V> task, Supplier<V> work) {}
 
-    /** Tasks currently in flight. */
+    /** Tasks currently in flight (submitted but not yet drained). */
     private final Map<K, PendingEntry<V>> pending = new ConcurrentHashMap<>();
-
-    /** Keys that have been submitted or already completed — prevents duplicates. */
-    private final Set<K> knownKeys = ConcurrentHashMap.newKeySet();
 
     /** The thread pool that executes tasks in priority order. */
     private final ThreadPoolExecutor pool;
@@ -172,13 +170,13 @@ public class KeyedTaskQueue<K, V> {
      * @return {@code true} if a new generation task was submitted; {@code false} if already known
      */
     public boolean submit(K key, Supplier<V> work, int priority) {
-        if (!knownKeys.add(key)) {
+        CompletableFuture<V> future = new CompletableFuture<>();
+        PrioritizedTask<V> task = new PrioritizedTask<>(priority, work, future);
+        boolean alreadyKnown = pending.putIfAbsent(key, new PendingEntry<>(future, task, work)) != null;
+        if (alreadyKnown) {
             return false;
         }
-        CompletableFuture<V> future = new CompletableFuture<>();
-        PendingEntry<V> entry = new PendingEntry<>(future, new PrioritizedTask<>(priority, work, future));
-        pending.put(key, entry);
-        pool.execute(entry.task());
+        pool.execute(task);
         return true;
     }
 
@@ -205,42 +203,24 @@ public class KeyedTaskQueue<K, V> {
         var iterator = pending.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<K, PendingEntry<V>> entry = iterator.next();
-            tryCollectCompletedResult(entry, iterator, results);
+            CompletableFuture<V> future = entry.getValue().future();
+            if (!future.isDone()) {
+                continue;
+            }
+            iterator.remove();
+            if (future.isCancelled()) {
+                continue;
+            }
+            if (future.isCompletedExceptionally()) {
+                future.exceptionally(ex -> {
+                    System.err.println("KeyedTaskQueue task failed for " + entry.getKey() + ": " + ex.getMessage());
+                    return null;
+                });
+                continue;
+            }
+            results.add(new Result<>(entry.getKey(), future.join()));
         }
         return results;
-    }
-
-    private void tryCollectCompletedResult(Map.Entry<K, PendingEntry<V>> entry,
-                                           java.util.Iterator<Map.Entry<K, PendingEntry<V>>> iterator,
-                                           List<Result<K, V>> results) {
-        CompletableFuture<V> future = entry.getValue().future;
-        if (!future.isDone()) {
-            return;
-        }
-
-        iterator.remove();
-        if (future.isCancelled()) {
-            handleCancelledTask(entry.getKey());
-            return;
-        }
-        if (future.isCompletedExceptionally()) {
-            handleFailedTask(entry.getKey(), future);
-            return;
-        }
-
-        results.add(new Result<>(entry.getKey(), future.join()));
-    }
-
-    private void handleCancelledTask(K key) {
-        knownKeys.remove(key);
-    }
-
-    private void handleFailedTask(K key, CompletableFuture<V> future) {
-        future.exceptionally(ex -> {
-            System.err.println("KeyedTaskQueue task failed for " + key + ": " + ex.getMessage());
-            return null;
-        });
-        knownKeys.remove(key);
     }
 
     // ----------------------------------------------------------------
@@ -270,11 +250,11 @@ public class KeyedTaskQueue<K, V> {
     }
 
     /**
-     * Runs {@code work} synchronously on the calling thread, bypassing the pool,
-     * and marks the key as known so future {@link #submit} calls are deduplicated.
+     * Runs {@code work} synchronously on the calling thread, bypassing the pool.
+     * Does not mark the key as known — the caller is responsible for tracking that
+     * the result has been received (e.g. inserting into their own loaded map).
      */
-    public V computeNow(K key, Supplier<V> work) {
-        knownKeys.add(key);
+    public V computeNow(Supplier<V> work) {
         return work.get();
     }
 
@@ -282,12 +262,8 @@ public class KeyedTaskQueue<K, V> {
     // Cancellation / cleanup
     // ----------------------------------------------------------------
 
-    /**
-     * Forgets a completed key so it can be re-submitted.
-     * Use when unloading a previously-completed result.
-     */
+    /** Cancels and forgets a key so it can be re-submitted. Use when unloading. */
     public void forget(K key) {
-        knownKeys.remove(key);
         PendingEntry<V> entry = pending.remove(key);
         if (entry != null) {
             entry.future().cancel(false);
@@ -307,7 +283,7 @@ public class KeyedTaskQueue<K, V> {
      *
      * @param newPriority the new priority — must be lower (higher urgency) than the existing one to have any effect
      */
-    public void reprioritise(K key, Supplier<V> work, int newPriority) {
+    public void reprioritise(K key, int newPriority) {
         PendingEntry<V> existing = pending.get(key);
         if (existing == null) {
             return;
@@ -317,8 +293,8 @@ public class KeyedTaskQueue<K, V> {
         if (!isStillQueued) {
             return;
         }
-        PrioritizedTask<V> newTask = new PrioritizedTask<>(newPriority, work, existing.future());
-        pending.put(key, new PendingEntry<>(existing.future(), newTask));
+        PrioritizedTask<V> newTask = new PrioritizedTask<>(newPriority, existing.work(), existing.future());
+        pending.put(key, new PendingEntry<>(existing.future(), newTask, existing.work()));
         pool.execute(newTask);
     }
 
@@ -331,9 +307,9 @@ public class KeyedTaskQueue<K, V> {
         return pending.size();
     }
 
-    /** Whether a task for this key has been submitted (pending or completed). */
+    /** Whether a task for this key is currently in flight (submitted but not yet drained). */
     public boolean isKnown(K key) {
-        return knownKeys.contains(key);
+        return pending.containsKey(key);
     }
 
     /** Returns a snapshot of all keys currently in flight (submitted but not yet drained). */

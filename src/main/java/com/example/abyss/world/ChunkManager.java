@@ -94,7 +94,7 @@ public class ChunkManager {
             return awaited;
         }
 
-        VoxelChunk chunk = taskQueue.computeNow(key, () -> buildChunk(key));
+        VoxelChunk chunk = taskQueue.computeNow(() -> buildChunk(key));
         loaded.put(key, createLoadedChunk(chunk));
         return chunk;
     }
@@ -151,7 +151,7 @@ public class ChunkManager {
      */
     public void reprioritiseChunkAsync(int cx, int cy, int cz, int newPriority) {
         ChunkKey key = new ChunkKey(cx, cy, cz);
-        taskQueue.reprioritise(key, () -> buildChunk(key), newPriority);
+        taskQueue.reprioritise(key, newPriority);
     }
 
     /**
@@ -221,13 +221,10 @@ public class ChunkManager {
     }
 
     /**
-     * Returns all chunk keys that are currently pending generation (submitted
-     * but not yet drained into the loaded map).
+     * Returns all chunk keys currently pending generation (submitted but not yet drained).
      */
     public Collection<ChunkKey> getPendingChunkKeys() {
-        List<ChunkKey> keys = new ArrayList<>();
-        keys.addAll(taskQueue.getPendingKeys());
-        return keys;
+        return taskQueue.getPendingKeys();
     }
 
     // ----------------------------------------------------------------
