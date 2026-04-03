@@ -4,6 +4,7 @@ import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.meshing.MeshSectionData;
 import com.example.abyss.world.render.lod.LodProxyManager;
+import com.example.abyss.world.render.lod.LodStreamer;
 import com.example.abyss.world.voxel.VoxelData;
 
 import java.util.List;
@@ -19,10 +20,12 @@ public class WorldDebugStatsProvider {
 
     private final ChunkManager chunkManager;
     private final LodProxyManager lodProxyManager;
+    private final LodStreamer lodStreamer;
 
-    public WorldDebugStatsProvider(ChunkManager chunkManager, LodProxyManager lodProxyManager) {
-        this.chunkManager = chunkManager;
+    public WorldDebugStatsProvider(ChunkManager chunkManager, LodProxyManager lodProxyManager, LodStreamer lodStreamer) {
+        this.chunkManager    = chunkManager;
         this.lodProxyManager = lodProxyManager;
+        this.lodStreamer      = lodStreamer;
     }
 
     public WorldDebugStats snapshot() {
@@ -37,7 +40,7 @@ public class WorldDebugStatsProvider {
                 pendingMeshCount,
                 approximateLoadedVoxelMemoryBytes,
                 approximatePendingMeshMemoryBytes,
-                lodProxyManager.getDebugStats()
+                lodProxyManager.getDebugStats(lodStreamer.getDemotionCount())
         );
     }
 

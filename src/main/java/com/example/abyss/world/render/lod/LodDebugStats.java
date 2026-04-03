@@ -6,18 +6,16 @@ package com.example.abyss.world.render.lod;
  * @param loadedProxyRegionCount loaded far-field proxy region count
  * @param pendingProxyMeshCount pending far-field proxy mesh build count
  * @param approximateLoadedProxyMeshMemoryBytes approximate CPU/GPU-side proxy mesh memory
- * @param promotionCount proxy-to-near promotion count
- * @param demotionCount near-to-proxy demotion count
+ * @param demotionCount total near-to-proxy demotions since startup
  */
 public record LodDebugStats(
         int loadedProxyRegionCount,
         int pendingProxyMeshCount,
         long approximateLoadedProxyMeshMemoryBytes,
-        long promotionCount,
         long demotionCount
 ) {
 
     public static LodDebugStats empty() {
-        return new LodDebugStats(0, 0, 0L, 0L, 0L);
+        return new LodDebugStats(0, 0, 0L, 0L);
     }
 }

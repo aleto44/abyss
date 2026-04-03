@@ -20,31 +20,30 @@ import java.util.Comparator;
  */
 public final class CylinderStreamer {
 
-  /** Horizontal radius within which LOD is suppressed, in chunks. Rounded up to the nearest whole region.
-   *  Equals ceil(NEAR_FIELD_H_RADIUS / REGION_CHUNKS) * REGION_CHUNKS so that the first LOD region
-   *  starts exactly where the near-field border shell ends (hRadius + 1 == LOD_EXCLUSION_H_CHUNKS). */
-  public static final int LOD_EXCLUSION_H_CHUNKS =
-      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_H_RADIUS
-          / WorldConstants.REGION_CHUNKS) * WorldConstants.REGION_CHUNKS;
+  /** How many regions to keep LOD suppressed around the player horizontally.
+   *  Near-field chunks fill this radius, so LOD starts just beyond it. */
+  public static final int LOD_EXCLUSION_H_REGIONS =
+      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_H_RADIUS / WorldConstants.REGION_CHUNKS);
 
-  /** Vertical radius within which LOD is suppressed, in chunks. Same derivation as LOD_EXCLUSION_H_CHUNKS. */
-  public static final int LOD_EXCLUSION_V_CHUNKS =
-      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_V_RADIUS
-          / WorldConstants.REGION_CHUNKS) * WorldConstants.REGION_CHUNKS;
+  /** Same as {@link #LOD_EXCLUSION_H_REGIONS} but vertically. */
+  public static final int LOD_EXCLUSION_V_REGIONS =
+      (int) Math.ceil((double) WorldConstants.NEAR_FIELD_V_RADIUS / WorldConstants.REGION_CHUNKS);
 
   static {
-    boolean hBandTooSmall = WorldConstants.LOD_BAND_H_RADIUS <= LOD_EXCLUSION_H_CHUNKS;
-    boolean vBandTooSmall = WorldConstants.LOD_BAND_V_RADIUS <= LOD_EXCLUSION_V_CHUNKS;
+    int lodBandHRegions = WorldConstants.LOD_BAND_H_RADIUS / WorldConstants.REGION_CHUNKS;
+    int lodBandVRegions = WorldConstants.LOD_BAND_V_RADIUS / WorldConstants.REGION_CHUNKS;
+    boolean hBandTooSmall = lodBandHRegions <= LOD_EXCLUSION_H_REGIONS;
+    boolean vBandTooSmall = lodBandVRegions <= LOD_EXCLUSION_V_REGIONS;
     if (hBandTooSmall) {
       throw new IllegalStateException(
-          "LOD_BAND_H_RADIUS (" + WorldConstants.LOD_BAND_H_RADIUS
-          + ") must be greater than LOD_EXCLUSION_H_CHUNKS (" + LOD_EXCLUSION_H_CHUNKS
+          "LOD_BAND_H_RADIUS (" + WorldConstants.LOD_BAND_H_RADIUS + " chunks = " + lodBandHRegions
+          + " regions) must be greater than LOD_EXCLUSION_H_REGIONS (" + LOD_EXCLUSION_H_REGIONS
           + "). Increase LOD_BAND_H_RADIUS or decrease NEAR_FIELD_H_RADIUS.");
     }
     if (vBandTooSmall) {
       throw new IllegalStateException(
-          "LOD_BAND_V_RADIUS (" + WorldConstants.LOD_BAND_V_RADIUS
-          + ") must be greater than LOD_EXCLUSION_V_CHUNKS (" + LOD_EXCLUSION_V_CHUNKS
+          "LOD_BAND_V_RADIUS (" + WorldConstants.LOD_BAND_V_RADIUS + " chunks = " + lodBandVRegions
+          + " regions) must be greater than LOD_EXCLUSION_V_REGIONS (" + LOD_EXCLUSION_V_REGIONS
           + "). Increase LOD_BAND_V_RADIUS or decrease NEAR_FIELD_V_RADIUS.");
     }
   }
@@ -90,10 +89,8 @@ public final class CylinderStreamer {
     if (!isInsideOuterCylinder) {
       return false;
     }
-    int exclusionHRadius = LOD_EXCLUSION_H_CHUNKS / WorldConstants.REGION_CHUNKS;
-    int exclusionVRadius = LOD_EXCLUSION_V_CHUNKS / WorldConstants.REGION_CHUNKS;
-    boolean isInsideExclusionCylinder = adx < exclusionHRadius && adz < exclusionHRadius
-        && dy > -exclusionVRadius && dy < exclusionVRadius;
+    boolean isInsideExclusionCylinder = adx < LOD_EXCLUSION_H_REGIONS && adz < LOD_EXCLUSION_H_REGIONS
+        && dy > -LOD_EXCLUSION_V_REGIONS && dy < LOD_EXCLUSION_V_REGIONS;
     return !isInsideExclusionCylinder;
   }
 

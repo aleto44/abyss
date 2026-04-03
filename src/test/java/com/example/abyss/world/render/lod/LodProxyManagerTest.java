@@ -14,18 +14,18 @@ class LodProxyManagerTest {
 
     @Test
     void managerStartsEmpty() {
-        LodProxyManager manager = new LodProxyManager();
+        LodProxyManager manager = new LodProxyManager(() -> null);
 
         assertEquals(0, manager.getLoadedRegionCount());
         assertEquals(0, manager.getPendingMeshCount());
         assertEquals(0L, manager.getApproximateLoadedMeshMemoryBytes());
         assertTrue(manager.getRenderEntries().isEmpty());
-        assertEquals(LodDebugStats.empty(), manager.getDebugStats());
+        assertEquals(LodDebugStats.empty(), manager.getDebugStats(0L));
     }
 
     @Test
     void managerTracksProxyRegionStateAndBuildsRenderEntries() {
-        LodProxyManager manager = new LodProxyManager();
+        LodProxyManager manager = new LodProxyManager(() -> null);
         LodRegionKey key = new LodRegionKey(2, -1, 5, 1);
         LodProxyMeshState meshState = new LodProxyMeshState();
         meshState.setMeshQueued(true);
@@ -33,12 +33,10 @@ class LodProxyManagerTest {
         LodProxyRegion region = new LodProxyRegion(key, 64.0f, -32.0f, 160.0f, meshState);
 
         manager.putRegion(region);
-        manager.recordPromotion();
-        manager.recordDemotion();
 
         LodProxyRegion storedRegion = manager.getRegion(key);
         List<LodRenderEntry> renderEntries = manager.getRenderEntries();
-        LodDebugStats debugStats = manager.getDebugStats();
+        LodDebugStats debugStats = manager.getDebugStats(0L);
 
         assertNotNull(storedRegion);
         assertEquals(1, manager.getLoadedRegionCount());
@@ -54,13 +52,11 @@ class LodProxyManagerTest {
         assertEquals(1, debugStats.loadedProxyRegionCount());
         assertEquals(1, debugStats.pendingProxyMeshCount());
         assertEquals(4096L, debugStats.approximateLoadedProxyMeshMemoryBytes());
-        assertEquals(1L, debugStats.promotionCount());
-        assertEquals(1L, debugStats.demotionCount());
     }
 
     @Test
     void managerRemovesRegionsByKey() {
-        LodProxyManager manager = new LodProxyManager();
+        LodProxyManager manager = new LodProxyManager(() -> null);
         LodRegionKey key = new LodRegionKey(0, 0, 0, 2);
         LodProxyRegion region = new LodProxyRegion(key, 0.0f, 0.0f, 0.0f, new LodProxyMeshState());
         manager.putRegion(region);

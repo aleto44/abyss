@@ -67,7 +67,7 @@ public class AbyssWorld implements WorldRenderSource {
     chunkStreamer = new NearChunkStreamer(chunkLoader, cylinderStreamer);
     lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(seed, resolver));
     lodStreamer = new LodStreamer(lodProxyManager, cylinderStreamer);
-    worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager);
+    worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager, lodStreamer);
   }
 
   // ----------------------------------------------------------------

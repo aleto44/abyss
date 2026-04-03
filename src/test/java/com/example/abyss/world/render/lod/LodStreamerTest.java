@@ -23,90 +23,46 @@ class LodStreamerTest {
      */
     @Test
     void regionInsideNearChunkRangeIsUnloadedOnUnloadTick() {
-        int regionVoxelSize = LodProxyGenerator.REGION_VOXELS_H;
-        float worldX = 2 * regionVoxelSize;
-        float worldY = 0;
-        float worldZ = 2 * regionVoxelSize;
-
         LodRegionKey loadedKey = new LodRegionKey(2, 0, 2, 1);
-        LodProxyRegion region = new LodProxyRegion(loadedKey, worldX, worldY, worldZ, new LodProxyMeshState());
-
-        TrackingLodProxyManager proxyManager = new TrackingLodProxyManager(List.of(region));
-        // hRadius=14 → LOD_EXCLUSION_H_CHUNKS = ceil(14/4)*4 = 16 → exclusionHRadius = 4 regions; region (2,0,2): dx=2 < 4 → inside exclusion
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of(loadedKey));
         CylinderStreamer cylinderStreamer = new CylinderStreamer(14, 8, 20, 12);
-        LodStreamer streamer = new LodStreamer(proxyManager, cylinderStreamer);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
 
-        // Advance past UNLOAD_INTERVAL_SECONDS (4.0f) with player at world origin (region 0,0,0).
         streamer.updateForPosition(new Vector3(0f, 0f, 0f), 5.0f);
 
-        assertTrue(proxyManager.removedKeys.contains(loadedKey),
+        assertTrue(proxyPort.removedKeys.contains(loadedKey),
                 "Region inside near-chunk exclusion zone should be unloaded when player is in range");
     }
 
     @Test
     void constructorAcceptsSharedCylinderStreamerWithoutNearChunkStreamerDependency() {
-        FakeLodProxyManager proxyManager = new FakeLodProxyManager();
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of());
         CylinderStreamer cylinderStreamer = new CylinderStreamer(14, 8, 20, 12);
-        LodStreamer streamer = new LodStreamer(proxyManager, cylinderStreamer);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
 
         streamer.updateForPosition(new Vector3(0f, 0f, 0f), 0.016f);
 
-        assertTrue(proxyManager.polledCompletedMeshes);
-        assertFalse(proxyManager.requestedKeys.isEmpty());
+        assertTrue(proxyPort.polledCompletedMeshes);
+        assertFalse(proxyPort.requestedKeys.isEmpty());
     }
 
-    private static final class TrackingLodProxyManager extends LodProxyManager {
-        private final List<LodProxyRegion> regions;
-        final List<LodRegionKey> removedKeys = new ArrayList<>();
+    // ---------------------------------------------------------------
+    // Test doubles — implement LodProxyPort, no subclassing needed
+    // ---------------------------------------------------------------
 
-        TrackingLodProxyManager(List<LodProxyRegion> regions) {
-            this.regions = regions;
+    private static final class TrackingProxyPort implements LodProxyPort {
+        private final List<LodRegionKey> loadedKeys;
+        final List<LodRegionKey> requestedKeys = new ArrayList<>();
+        final List<LodRegionKey> removedKeys   = new ArrayList<>();
+        boolean polledCompletedMeshes;
+
+        TrackingProxyPort(List<LodRegionKey> loadedKeys) {
+            this.loadedKeys = new ArrayList<>(loadedKeys);
         }
 
-        @Override
-        public void pollCompletedMeshes() {}
+        @Override public void pollCompletedMeshes() { polledCompletedMeshes = true; }
 
-        @Override
-        public boolean isRegionKnown(LodRegionKey key) {
-            return true;
-        }
-
-        @Override
-        public boolean requestProxyMeshAsync(LodRegionKey key) {
-            return false;
-        }
-
-        @Override
-        public LodProxyRegion removeRegion(LodRegionKey key) {
-            removedKeys.add(key);
-            return null;
-        }
-
-        @Override
-        public Iterable<LodProxyRegion> getLoadedRegionsForUpload() {
-            return regions;
-        }
-    }
-
-    private static final class FakeLodProxyManager extends LodProxyManager {
-        private final List<LodRegionKey> requestedKeys = new ArrayList<>();
-        private boolean polledCompletedMeshes;
-
-        @Override
-        public void pollCompletedMeshes() {
-            polledCompletedMeshes = true;
-        }
-
-        @Override
-        public boolean isRegionKnown(LodRegionKey key) {
-            return false;
-        }
-
-        @Override
-        public boolean requestProxyMeshAsync(LodRegionKey key) {
-            requestedKeys.add(key);
-            return true;
-        }
+        @Override public boolean isRegionKnown(LodRegionKey key) { return loadedKeys.contains(key); }
 
         @Override
         public boolean requestProxyMeshAsync(LodRegionKey key, int priority) {
@@ -114,9 +70,17 @@ class LodStreamerTest {
             return true;
         }
 
+        @Override public void reprioritiseProxyMeshAsync(LodRegionKey key, int newPriority) {}
+
         @Override
-        public List<LodRenderEntry> getRenderEntries() {
-            return List.of();
+        public LodProxyRegion removeRegion(LodRegionKey key) {
+            removedKeys.add(key);
+            loadedKeys.remove(key);
+            return null;
         }
+
+        @Override public List<LodRegionKey> getLoadedRegionKeys() { return List.copyOf(loadedKeys); }
+
+        @Override public List<LodRenderEntry> getRenderEntries() { return List.of(); }
     }
 }

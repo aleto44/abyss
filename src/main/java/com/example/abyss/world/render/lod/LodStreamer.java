@@ -35,17 +35,13 @@ public class LodStreamer {
      */
     private static final int MAX_SUBMISSIONS_PER_SWEEP = 128;
 
-    // ---------------------------------------------------------------
-    // Region dimensions (derived from generator constants)
-    // ---------------------------------------------------------------
-
     private static final int REGION_SIZE = LodProxyGenerator.REGION_VOXELS_H;
 
     // ---------------------------------------------------------------
     // State
     // ---------------------------------------------------------------
 
-    private final LodProxyManager proxyManager;
+    private final LodProxyPort proxyPort;
     private final CylinderStreamer cylinderStreamer;
 
     private int lastSweptRx = Integer.MIN_VALUE;
@@ -60,8 +56,10 @@ public class LodStreamer {
     private float movementSweepTimer;
     private float idleResweepTimer = IDLE_RESWEEP_INTERVAL_SECONDS;
 
-    public LodStreamer(LodProxyManager proxyManager, CylinderStreamer cylinderStreamer) {
-        this.proxyManager     = proxyManager;
+    private long demotionCount;
+
+    public LodStreamer(LodProxyPort proxyPort, CylinderStreamer cylinderStreamer) {
+        this.proxyPort       = proxyPort;
         this.cylinderStreamer = cylinderStreamer;
     }
 
@@ -69,16 +67,17 @@ public class LodStreamer {
     // Per-frame update
     // ---------------------------------------------------------------
 
-    /**
-     * Call once per frame on the main thread.
-     * Submits proxy region requests and periodically evicts distant regions.
-     */
+    /** Call once per frame on the main thread. */
     public void update(PerspectiveCamera camera, float deltaTime) {
         updateForPosition(camera.position, deltaTime);
     }
 
+    public long getDemotionCount() {
+        return demotionCount;
+    }
+
     void updateForPosition(Vector3 observerPosition, float deltaTime) {
-        proxyManager.pollCompletedMeshes();
+        proxyPort.pollCompletedMeshes();
         maybeUnloadDistantRegions(observerPosition, deltaTime);
         sweepProxyBand(observerPosition, deltaTime);
     }
@@ -142,14 +141,14 @@ public class LodStreamer {
             }
             int[] candidate = candidates.get(priority);
             LodRegionKey key = new LodRegionKey(candidate[0], candidate[1], candidate[2], 1);
-            boolean isKnown = proxyManager.isRegionKnown(key);
+            boolean isKnown = proxyPort.isRegionKnown(key);
             if (!isKnown) {
-                boolean submitted = proxyManager.requestProxyMeshAsync(key, priority);
+                boolean submitted = proxyPort.requestProxyMeshAsync(key, priority);
                 if (submitted) {
                     budget.recordSubmission();
                 }
             } else {
-                proxyManager.reprioritiseProxyMeshAsync(key, priority);
+                proxyPort.reprioritiseProxyMeshAsync(key, priority);
             }
         }
     }
@@ -181,7 +180,7 @@ public class LodStreamer {
         lastUnloadedRz = rz;
 
         List<LodRegionKey> toRemove = new ArrayList<>();
-        for (LodRegionKey key : getLoadedRegionKeys()) {
+        for (LodRegionKey key : proxyPort.getLoadedRegionKeys()) {
             int dx = key.regionX() - rx;
             int dy = key.regionY() - ry;
             int dz = key.regionZ() - rz;
@@ -192,17 +191,9 @@ public class LodStreamer {
         }
 
         for (LodRegionKey key : toRemove) {
-            proxyManager.removeRegion(key);
-            proxyManager.recordDemotion();
+            proxyPort.removeRegion(key);
+            demotionCount++;
         }
-    }
-
-    private List<LodRegionKey> getLoadedRegionKeys() {
-        List<LodRegionKey> keys = new ArrayList<>();
-        for (LodProxyRegion region : proxyManager.getLoadedRegionsForUpload()) {
-            keys.add(region.key());
-        }
-        return keys;
     }
 
     // ---------------------------------------------------------------
