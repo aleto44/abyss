@@ -42,6 +42,7 @@ public class AbyssWorld implements WorldRenderSource {
   private LodProxyManager lodProxyManager;
   private NearChunkStreamer chunkStreamer;
   private LodStreamer lodStreamer;
+  private CylinderStreamer cylinderStreamer;
 
   public AbyssWorld(long seed) {
     this(seed, GenConfigResolver.DEFAULT);
@@ -62,7 +63,7 @@ public class AbyssWorld implements WorldRenderSource {
     voxelAccess = new WorldVoxelAccess(chunkManager);
     voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
     chunkLoader = new ChunkLoader(chunkManager, meshCoordinator);
-    CylinderStreamer cylinderStreamer = new CylinderStreamer(
+    cylinderStreamer = new CylinderStreamer(
         WorldConstants.NEAR_FIELD_H_RADIUS,
         WorldConstants.NEAR_FIELD_V_RADIUS,
         WorldConstants.LOD_BAND_H_RADIUS / WorldConstants.REGION_CHUNKS,
@@ -108,6 +109,11 @@ public class AbyssWorld implements WorldRenderSource {
 
   public LodStreamer getLodStreamer() {
     return lodStreamer;
+  }
+
+  /** Returns the shared cylinder streamer used by both near-field and LOD streaming. */
+  public CylinderStreamer getCylinderStreamer() {
+    return cylinderStreamer;
   }
 
   // ----------------------------------------------------------------

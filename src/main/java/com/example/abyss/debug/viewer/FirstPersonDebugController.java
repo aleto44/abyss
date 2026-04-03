@@ -26,6 +26,7 @@ public class FirstPersonDebugController {
     private final Vector3 tmp = new Vector3();
     private float yawDegrees;
     private float pitchDegrees;
+    private boolean zoneVisualizationEnabled = false;
 
     public FirstPersonDebugController(Camera camera,
                                       float moveSpeedUnitsPerSecond,
@@ -48,6 +49,9 @@ public class FirstPersonDebugController {
         }
         if (Gdx.input.justTouched()) {
             setMouseLookEnabled(true);
+        }
+        if (Gdx.input.isKeyJustPressed(Input.Keys.F3)) {
+            zoneVisualizationEnabled = !zoneVisualizationEnabled;
         }
 
         if (mouseLookProcessor.isMouseLookEnabled()) {
@@ -93,8 +97,12 @@ public class FirstPersonDebugController {
         mouseLookProcessor.setMouseLookEnabled(enabled);
     }
 
+    public boolean isZoneVisualizationEnabled() {
+        return zoneVisualizationEnabled;
+    }
+
     public static String getControlSummary() {
-        return "Controls: Click capture mouse | WASD move | Space up | Ctrl down | Shift boost | Mouse look | Esc release mouse";
+        return "Controls: Click capture mouse | WASD move | Space up | Ctrl down | Shift boost | Mouse look | Esc release mouse | F3 toggle zones";
     }
 
     static float clampPitch(float pitchDegrees) {

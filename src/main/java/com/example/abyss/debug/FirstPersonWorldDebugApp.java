@@ -10,6 +10,7 @@ import com.example.abyss.debug.constants.FirstPersonWorldDebugConstants;
 import com.example.abyss.debug.viewer.FirstPersonDebugController;
 import com.example.abyss.debug.viewer.FirstPersonWorldDebugOverlay;
 import com.example.abyss.debug.viewer.FirstPersonWorldRenderer;
+import com.example.abyss.debug.viewer.StreamingZoneWireframeRenderer;
 import com.example.abyss.util.MainThreadWatchdog;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.NearChunkStreamer;
@@ -29,6 +30,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private LodStreamer lodStreamer;
     private MainThreadWatchdog watchdog;
     private FirstPersonWorldRenderer worldRenderer;
+    private StreamingZoneWireframeRenderer wireframeRenderer;
     private FirstPersonWorldDebugOverlay debugOverlay;
     private String startupInfo;
     private String debugInfo;
@@ -38,6 +40,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         batch = new SpriteBatch();
         font = new BitmapFont();
         worldRenderer = new FirstPersonWorldRenderer();
+        wireframeRenderer = new StreamingZoneWireframeRenderer();
         debugOverlay = new FirstPersonWorldDebugOverlay(batch, font);
 
         camera = new PerspectiveCamera(
@@ -111,6 +114,10 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         Gdx.gl.glCullFace(GL20.GL_BACK);
 
         worldRenderer.renderWorld(world, camera);
+        boolean zoneVisualizationEnabled = controller.isZoneVisualizationEnabled();
+        if (zoneVisualizationEnabled) {
+            wireframeRenderer.render(camera, world.getCylinderStreamer(), world.getRenderSnapshot());
+        }
         renderOverlay();
     }
 
@@ -131,6 +138,9 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         }
         if (worldRenderer != null) {
             worldRenderer.dispose();
+        }
+        if (wireframeRenderer != null) {
+            wireframeRenderer.dispose();
         }
         if (batch != null) {
             batch.dispose();
