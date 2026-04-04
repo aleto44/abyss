@@ -20,6 +20,16 @@ final class ProxyQuadEmitter {
                 lx + step, ly, lz);
     }
 
+    /** Emits an upward-facing quad on the XZ plane with independent width and depth. */
+    static void emitQuadYSized(ProxyMeshSectionBuilder b, float lx, float ly, float lz,
+                                int width, int depth, Color color) {
+        emitQuad(b, color, 0f, 1f, 0f,
+                lx,         ly, lz,
+                lx,         ly, lz + depth,
+                lx + width, ly, lz + depth,
+                lx + width, ly, lz);
+    }
+
     /**
      * Emits a vertical wall quad parallel to the YZ plane at x = {@code lx}.
      * {@code facingPositiveX} controls the outward normal direction.

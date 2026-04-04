@@ -30,13 +30,17 @@ public final class LodProxyGenerator {
     public static final int REGION_VOXELS_H = WorldConstants.REGION_CHUNKS * WorldConstants.CHUNK_SIZE;
 
     /**
-     * Voxels between LOD surface samples (XZ step size for quad emission).
+     * Voxels per LOD proxy grid cell (XZ). Tunable via {@link WorldConstants#LOD_PROXY_SAMPLE_STEP}.
      * Lowering this increases LOD detail (more quads per region).
      */
-    public static final int SAMPLE_STEP = 2;
+    public static final int SAMPLE_STEP = WorldConstants.LOD_PROXY_SAMPLE_STEP;
 
-    /** Number of quad columns along X and Z within one region. */
-    static final int GRID_W = REGION_VOXELS_H / SAMPLE_STEP;
+    /**
+     * Number of quad columns along X and Z within one region.
+     * Uses ceiling division so the last cell always covers any remainder voxels,
+     * preventing uncovered strips at the region edge that produce visible gaps.
+     */
+    static final int GRID_W = (REGION_VOXELS_H + SAMPLE_STEP - 1) / SAMPLE_STEP;
 
     /** Sentinel: column contains no solid voxels. */
     private static final int NO_SURFACE = Integer.MIN_VALUE;
@@ -120,13 +124,12 @@ public final class LodProxyGenerator {
     }
 
     /**
-     * Pass 1: resolves the highest solid world-Y for every grid column.
-     * Returns {@link #NO_SURFACE} for all-air columns.
+     * Pass 1: resolves the highest solid world-Y for every grid cell.
+     * Returns {@link #NO_SURFACE} for all-air cells.
      * <p>
-     * Each region always emits the top face for its own surface voxels. Previously,
-     * columns at the region top were suppressed and deferred to the region above —
-     * but the region above only scans its own (higher) chunks and finds air, producing
-     * holes at region-top boundaries.
+     * Each cell is sampled at its origin voxel (gx*SAMPLE_STEP, gz*SAMPLE_STEP).
+     * GRID_W uses ceiling division so a partial last cell is always included,
+     * preventing an uncovered strip of voxels at the region edge that would show as gaps.
      */
     private int[] resolveSurfaceHeights(VoxelData[][] chunksByY,
                                         int worldBaseX, int worldBaseY, int worldBaseZ) {
@@ -143,8 +146,8 @@ public final class LodProxyGenerator {
     }
 
     /**
-     * Pass 2: resolves the surface color for each non-air grid column.
-     * Null entries indicate all-air columns.
+     * Pass 2: resolves the surface color for each non-air grid cell.
+     * Null entries indicate all-air cells.
      */
     private Color[] resolveSurfaceColors(VoxelData[][] chunksByY,
                                          int[] surfaceWorldY,
@@ -166,15 +169,20 @@ public final class LodProxyGenerator {
     }
 
     /**
-     * Pass 3: emits a top-face quad for each solid column, plus side-wall quads
-     * wherever this column is higher than a cardinal neighbour.
-     * Walls are always emitted from the higher side to avoid Z-fighting.
+     * Pass 3: emits a top-face quad for each solid cell, plus side-wall quads
+     * wherever this cell is higher than a cardinal neighbour.
+     * <p>
+     * The last cell in each axis may be narrower than {@value #SAMPLE_STEP} when
+     * REGION_VOXELS_H is not an exact multiple of SAMPLE_STEP. The actual cell
+     * width is clamped to the remaining voxels so the quad exactly covers the region edge.
      */
     private void emitSurfaceGeometry(ProxyMeshSectionBuilder opaque,
                                      int[] surfaceWorldY, Color[] surfaceColor,
                                      int worldBaseY) {
         for (int gz = 0; gz < GRID_W; gz++) {
+            int cellH = Math.min(SAMPLE_STEP, REGION_VOXELS_H - gz * SAMPLE_STEP);
             for (int gx = 0; gx < GRID_W; gx++) {
+                int cellW = Math.min(SAMPLE_STEP, REGION_VOXELS_H - gx * SAMPLE_STEP);
                 int idx = gz * GRID_W + gx;
                 int topmostWorldY = surfaceWorldY[idx];
 
@@ -188,47 +196,59 @@ public final class LodProxyGenerator {
                 float ly = (topmostWorldY + 1) - worldBaseY;
                 Color color = surfaceColor[idx];
 
-                ProxyQuadEmitter.emitQuadY(opaque, lx, ly, lz, SAMPLE_STEP, color);
-                emitSideWalls(opaque, surfaceWorldY, gx, gz, lx, ly, lz, topmostWorldY, color, worldBaseY);
+                emitTopFace(opaque, lx, ly, lz, cellW, cellH, color);
+                emitSideWalls(opaque, surfaceWorldY, gx, gz, cellW, cellH, lx, ly, lz, topmostWorldY, color, worldBaseY);
             }
         }
     }
 
+    /** Emits a top-face quad sized to the actual cell dimensions (handles partial last cells). */
+    private static void emitTopFace(ProxyMeshSectionBuilder opaque,
+                                    float lx, float ly, float lz,
+                                    int cellW, int cellH, Color color) {
+        if (cellW == SAMPLE_STEP && cellH == SAMPLE_STEP) {
+            ProxyQuadEmitter.emitQuadY(opaque, lx, ly, lz, SAMPLE_STEP, color);
+        } else {
+            ProxyQuadEmitter.emitQuadYSized(opaque, lx, ly, lz, cellW, cellH, color);
+        }
+    }
+
     /**
-     * Emits side-wall quads for the four cardinal neighbours of the given column.
-     * A wall is emitted when this column is higher than the neighbour.
-     * Columns at the region edge treat the out-of-bounds neighbour as all-air
+     * Emits side-wall quads for the four cardinal neighbours of the given cell.
+     * A wall is emitted when this cell is higher than the neighbour.
+     * Cells at the region edge treat the out-of-bounds neighbour as {@link #NO_SURFACE}
      * so the boundary is always sealed and no gap opens toward an adjacent region.
      */
     private void emitSideWalls(ProxyMeshSectionBuilder opaque, int[] surfaceWorldY,
-                                int gx, int gz, float lx, float ly, float lz,
+                                int gx, int gz, int cellW, int cellH,
+                                float lx, float ly, float lz,
                                 int topmostWorldY, Color color, int worldBaseY) {
         int negZNeighbourY = (gz > 0) ? surfaceWorldY[(gz - 1) * GRID_W + gx] : NO_SURFACE;
         boolean negZIsLower = negZNeighbourY < topmostWorldY;
         if (negZIsLower) {
             float wallBottom = wallBottom(negZNeighbourY, worldBaseY);
-            ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz, ly - wallBottom, SAMPLE_STEP, color, false);
+            ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz, ly - wallBottom, cellW, color, false);
         }
 
         int posZNeighbourY = (gz < GRID_W - 1) ? surfaceWorldY[(gz + 1) * GRID_W + gx] : NO_SURFACE;
         boolean posZIsLower = posZNeighbourY < topmostWorldY;
         if (posZIsLower) {
             float wallBottom = wallBottom(posZNeighbourY, worldBaseY);
-            ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz + SAMPLE_STEP, ly - wallBottom, SAMPLE_STEP, color, true);
+            ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz + cellH, ly - wallBottom, cellW, color, true);
         }
 
         int negXNeighbourY = (gx > 0) ? surfaceWorldY[gz * GRID_W + (gx - 1)] : NO_SURFACE;
         boolean negXIsLower = negXNeighbourY < topmostWorldY;
         if (negXIsLower) {
             float wallBottom = wallBottom(negXNeighbourY, worldBaseY);
-            ProxyQuadEmitter.emitQuadXFace(opaque, lx, wallBottom, lz, ly - wallBottom, SAMPLE_STEP, color, false);
+            ProxyQuadEmitter.emitQuadXFace(opaque, lx, wallBottom, lz, ly - wallBottom, cellH, color, false);
         }
 
         int posXNeighbourY = (gx < GRID_W - 1) ? surfaceWorldY[gz * GRID_W + (gx + 1)] : NO_SURFACE;
         boolean posXIsLower = posXNeighbourY < topmostWorldY;
         if (posXIsLower) {
             float wallBottom = wallBottom(posXNeighbourY, worldBaseY);
-            ProxyQuadEmitter.emitQuadXFace(opaque, lx + SAMPLE_STEP, wallBottom, lz, ly - wallBottom, SAMPLE_STEP, color, true);
+            ProxyQuadEmitter.emitQuadXFace(opaque, lx + cellW, wallBottom, lz, ly - wallBottom, cellH, color, true);
         }
     }
 
