@@ -12,28 +12,18 @@ import com.example.abyss.WorldConstants;
 import com.example.abyss.world.render.CylinderStreamer;
 import com.example.abyss.world.render.LodRenderEntry;
 import com.example.abyss.world.render.WorldRenderSnapshot;
-import com.example.abyss.world.render.lod.LodProxyGenerator;
+import com.example.abyss.world.render.lod.LodConfig;
+import com.example.abyss.world.render.lod.LodTierConfig;
 
 import java.util.List;
 
 /**
  * Draws axis-aligned wireframe boxes for each streaming zone in the 3D debug view.
- * <p>
- * Three zone types are visualised:
- * <ul>
- *   <li><b>Near-field cylinder</b> — magenta box centred on the camera showing the
- *       full-detail chunk load volume.</li>
- *   <li><b>LOD band</b> — cyan box showing the outer LOD streaming extent.</li>
- *   <li><b>Loaded LOD regions</b> — per-region boxes tinted by LOD level (green → yellow
- *       → orange → red as level rises).</li>
- * </ul>
  * Toggle with {@code F3}.
- * </p>
  */
 public class StreamingZoneWireframeRenderer {
 
     private static final float[] COLOR_NEAR_FIELD = { 1.0f, 0.2f, 0.9f, 0.85f };
-    private static final float[] COLOR_LOD_BAND   = { 0.2f, 0.9f, 1.0f, 0.55f };
 
     /** RGBA tints per LOD level index (0 = finest, higher = coarser). */
     private static final float[][] LOD_LEVEL_COLORS = {
@@ -79,10 +69,7 @@ public class StreamingZoneWireframeRenderer {
                 new VertexAttribute(VertexAttributes.Usage.Position, 3, "a_position"));
     }
 
-    /**
-     * Renders all streaming zone wireframes for the current frame.
-     * Should be called after opaque/transparent world geometry.
-     */
+    /** Renders all streaming zone wireframes for the current frame. */
     public void render(PerspectiveCamera camera, CylinderStreamer cylinderStreamer,
                        WorldRenderSnapshot snapshot) {
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -93,7 +80,7 @@ public class StreamingZoneWireframeRenderer {
         shader.bind();
 
         renderNearFieldZone(camera, cylinderStreamer);
-        renderLodBandZone(camera, cylinderStreamer);
+        renderAllTierBandZones(camera);
         renderLoadedRegions(camera, snapshot.farFieldEntries());
 
         Gdx.gl.glDepthMask(true);
@@ -122,18 +109,20 @@ public class StreamingZoneWireframeRenderer {
     }
 
     // ----------------------------------------------------------------
-    // LOD band outer zone
+    // Tier band zones
     // ----------------------------------------------------------------
 
-    private void renderLodBandZone(PerspectiveCamera camera, CylinderStreamer cylinderStreamer) {
-        float hExtent = cylinderStreamer.getBandHRadius() * LodProxyGenerator.REGION_VOXELS_H;
-        float vExtent = cylinderStreamer.getBandVRadius() * LodProxyGenerator.REGION_VOXELS_H;
+    private void renderAllTierBandZones(PerspectiveCamera camera) {
         float cx = camera.position.x;
         float cy = camera.position.y;
         float cz = camera.position.z;
-        drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
-                         cx + hExtent, cy + vExtent, cz + hExtent,
-                         COLOR_LOD_BAND);
+        for (LodTierConfig tier : LodConfig.TIERS) {
+            float hExtent = tier.outerHRadiusChunks() * WorldConstants.CHUNK_SIZE;
+            float vExtent = tier.outerVRadiusChunks() * WorldConstants.CHUNK_SIZE;
+            float[] color = LOD_LEVEL_COLORS[tier.lodLevel() % LOD_LEVEL_COLORS.length];
+            drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
+                             cx + hExtent, cy + vExtent, cz + hExtent, color);
+        }
     }
 
     // ----------------------------------------------------------------
@@ -141,8 +130,9 @@ public class StreamingZoneWireframeRenderer {
     // ----------------------------------------------------------------
 
     private void renderLoadedRegions(PerspectiveCamera camera, List<LodRenderEntry> farFieldEntries) {
-        float regionSize = LodProxyGenerator.REGION_VOXELS_H;
         for (LodRenderEntry entry : farFieldEntries) {
+            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
+            float regionSize = tier.regionSizeVoxels();
             float[] color = lodLevelColor(entry.lodLevel());
             drawBox(camera,
                     entry.worldX(),              entry.worldY(),              entry.worldZ(),
@@ -177,10 +167,6 @@ public class StreamingZoneWireframeRenderer {
         boxMesh.render(shader, GL20.GL_LINES, 0, BOX_VERTEX_COUNT);
     }
 
-    /**
-     * Fills {@link #vertexBuffer} with the 12 edge-pairs (24 vertices) of an AABB.
-     * Each pair forms one GL_LINES segment.
-     */
     private void fillBoxVertices(float x0, float y0, float z0,
                                  float x1, float y1, float z1) {
         int i = 0;

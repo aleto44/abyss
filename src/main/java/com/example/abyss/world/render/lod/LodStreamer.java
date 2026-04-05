@@ -3,54 +3,43 @@ package com.example.abyss.world.render.lod;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.math.Vector3;
 import com.example.abyss.world.render.CylinderStreamer;
-import com.example.abyss.world.render.StreamingSubmissionBudget;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * Distance-band streaming policy for far-field proxy regions.
- * <p>
- * Requests proxy regions in an outer band around the observer, leaving the
- * inner near-field cylinder managed elsewhere. The exclusion zone is derived
- * directly from the shared {@link CylinderStreamer}, so the near-field and
- * LOD streamers stay consistent without coupling this class to a concrete
- * near-field implementation.
- * </p>
+ * Sweeps all configured {@link LodConfig#TIERS} each frame, submitting or
+ * reprioritising proxy regions for every tier whose band contains the observer.
  */
 public class LodStreamer {
-    // ---------------------------------------------------------------
-    // Timing constants — mirror NearChunkStreamer's discipline
-    // ---------------------------------------------------------------
 
-    private static final float UNLOAD_INTERVAL_SECONDS          = 2.0f;
-    private static final float MOVEMENT_SWEEP_THRESHOLD         = 1.0f;
-    private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS  = 0.5f;
-    private static final float IDLE_RESWEEP_INTERVAL_SECONDS    = 0.1f;
+    private static final float UNLOAD_INTERVAL_SECONDS         = 2.0f;
+    private static final float MOVEMENT_SWEEP_THRESHOLD        = 1.0f;
+    private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS = 0.1f;
+    private static final float IDLE_RESWEEP_INTERVAL_SECONDS   = 0.5f;
 
     /**
-     * Maximum proxy region submissions per sweep.
-     * Sized to saturate a multi-threaded generation pool on initial load without
-     * flooding the task queue excessively.
+     * Extra regions beyond the load band's outer edge before a loaded region is eligible for removal.
+     * Prevents thrashing when the player drifts near a band boundary: the old region stays visible
+     * until the replacement has had time to generate.
      */
-    private static final int MAX_SUBMISSIONS_PER_SWEEP = 128;
+    private static final int UNLOAD_HYSTERESIS_REGIONS = 1;
 
-    private static final int REGION_SIZE = LodProxyGenerator.REGION_VOXELS_H;
-
-    // ---------------------------------------------------------------
-    // State
-    // ---------------------------------------------------------------
+    /**
+     * Hard cap on the number of LOD generation tasks that may sit in-flight at once.
+     * Keeps the shared worker pool from being flooded with distant tasks that block
+     * close ones from completing: once the queue is this full, sweeps only
+     * reprioritise existing tasks and submit nothing new.
+     */
+    private static final int MAX_IN_FLIGHT_TASKS = 24;
 
     private final LodProxyPort proxyPort;
     private final CylinderStreamer cylinderStreamer;
 
-    private int lastSweptRx = Integer.MIN_VALUE;
-    private int lastSweptRy = Integer.MIN_VALUE;
-    private int lastSweptRz = Integer.MIN_VALUE;
-
-    private int lastUnloadedRx = Integer.MIN_VALUE;
-    private int lastUnloadedRy = Integer.MIN_VALUE;
-    private int lastUnloadedRz = Integer.MIN_VALUE;
+    private final Vector3 lastSweptPosition  = new Vector3(Float.NaN, Float.NaN, Float.NaN);
+    private final Vector3 lastUnloadPosition = new Vector3(Float.NaN, Float.NaN, Float.NaN);
 
     private float unloadTimer;
     private float movementSweepTimer;
@@ -59,13 +48,9 @@ public class LodStreamer {
     private long demotionCount;
 
     public LodStreamer(LodProxyPort proxyPort, CylinderStreamer cylinderStreamer) {
-        this.proxyPort       = proxyPort;
+        this.proxyPort        = proxyPort;
         this.cylinderStreamer = cylinderStreamer;
     }
-
-    // ---------------------------------------------------------------
-    // Per-frame update
-    // ---------------------------------------------------------------
 
     /** Call once per frame on the main thread. */
     public void update(PerspectiveCamera camera, float deltaTime) {
@@ -87,21 +72,17 @@ public class LodStreamer {
     // ---------------------------------------------------------------
 
     private void sweepProxyBand(Vector3 observerPosition, float deltaTime) {
-        int rx = worldToRegion(Math.round(observerPosition.x));
-        int ry = worldToRegion(Math.round(observerPosition.y));
-        int rz = worldToRegion(Math.round(observerPosition.z));
-
-        boolean regionChanged = rx != lastSweptRx || ry != lastSweptRy || rz != lastSweptRz;
-        boolean isMoving      = cylinderStreamer.updateAndCheckMovement(observerPosition, deltaTime, MOVEMENT_SWEEP_THRESHOLD);
+        boolean isMoving = cylinderStreamer.updateAndCheckMovement(observerPosition, deltaTime, MOVEMENT_SWEEP_THRESHOLD);
 
         movementSweepTimer += deltaTime;
         idleResweepTimer   += deltaTime;
         boolean movementSweepReady = movementSweepTimer >= MOVEMENT_SWEEP_INTERVAL_SECONDS;
         boolean idleResweepReady   = idleResweepTimer   >= IDLE_RESWEEP_INTERVAL_SECONDS;
 
-        boolean isInitialSweep  = lastSweptRx == Integer.MIN_VALUE;
+        boolean isInitialSweep  = Float.isNaN(lastSweptPosition.x);
         boolean isMovementSweep = isMoving && movementSweepReady;
-        boolean shouldSweep     = isInitialSweep || regionChanged || isMovementSweep || idleResweepReady;
+        boolean positionChanged = !isInitialSweep && !observerPosition.epsilonEquals(lastSweptPosition, 0.5f);
+        boolean shouldSweep     = isInitialSweep || positionChanged || isMovementSweep || idleResweepReady;
 
         if (!shouldSweep) {
             return;
@@ -109,65 +90,85 @@ public class LodStreamer {
 
         movementSweepTimer = 0f;
         idleResweepTimer   = 0f;
-        lastSweptRx = rx;
-        lastSweptRy = ry;
-        lastSweptRz = rz;
+        lastSweptPosition.set(observerPosition);
 
-        submitBandCandidatesNearestFirst(rx, ry, rz, observerPosition);
+        submitAllTierCandidatesNearestFirst(observerPosition);
     }
 
-    private void submitBandCandidatesNearestFirst(int rx, int ry, int rz, Vector3 camPos) {
-        List<int[]> candidates = new ArrayList<>();
-        int bandHRadius = cylinderStreamer.getBandHRadius();
-        int bandVRadius = cylinderStreamer.getBandVRadius();
-        for (int dy = -bandVRadius; dy <= bandVRadius; dy++) {
-            for (int dz = -bandHRadius; dz <= bandHRadius; dz++) {
-                for (int dx = -bandHRadius; dx <= bandHRadius; dx++) {
-                    boolean isInBand = cylinderStreamer.isInLodBand(dx, dy, dz);
-                    if (!isInBand) {
-                        continue;
-                    }
-                    candidates.add(new int[]{rx + dx, ry + dy, rz + dz});
-                }
-            }
-        }
+    private void submitAllTierCandidatesNearestFirst(Vector3 observerPosition) {
+        List<TierCandidate> allCandidates = collectAllTierCandidates(observerPosition);
+        allCandidates.sort(Comparator.comparingDouble(c -> c.distanceSq));
 
-        candidates.sort(cylinderStreamer.createNearestFirstComparator(REGION_SIZE, camPos));
-
-        StreamingSubmissionBudget budget = new StreamingSubmissionBudget(MAX_SUBMISSIONS_PER_SWEEP);
-        for (int priority = 0; priority < candidates.size(); priority++) {
-            if (budget.isExhausted()) {
-                break;
-            }
-            int[] candidate = candidates.get(priority);
-            LodRegionKey key = new LodRegionKey(candidate[0], candidate[1], candidate[2], 1);
-            boolean isKnown = proxyPort.isRegionKnown(key);
-            if (!isKnown) {
-                boolean submitted = proxyPort.requestProxyMeshAsync(key, priority);
-                if (submitted) {
-                    budget.recordSubmission();
-                }
+        int inFlight = proxyPort.getPendingRegionCount();
+        int globalPriority = 0;
+        for (TierCandidate candidate : allCandidates) {
+            boolean isKnown = proxyPort.isRegionKnown(candidate.key);
+            if (isKnown) {
+                proxyPort.reprioritiseProxyMeshAsync(candidate.key, globalPriority);
             } else {
-                proxyPort.reprioritiseProxyMeshAsync(key, priority);
+                boolean queueIsFull = inFlight >= MAX_IN_FLIGHT_TASKS;
+                if (queueIsFull) {
+                    continue;
+                }
+                boolean submitted = proxyPort.requestProxyMeshAsync(candidate.key, globalPriority);
+                if (submitted) {
+                    inFlight++;
+                }
             }
+            globalPriority++;
         }
     }
+
+    private List<TierCandidate> collectAllTierCandidates(Vector3 observerPosition) {
+        List<TierCandidate> allCandidates = new ArrayList<>();
+        for (LodTierConfig tier : LodConfig.TIERS) {
+            int rx = worldToRegionForTier(Math.round(observerPosition.x), tier);
+            int ry = worldToRegionForTier(Math.round(observerPosition.y), tier);
+            int rz = worldToRegionForTier(Math.round(observerPosition.z), tier);
+            int outerH = tier.outerHRadiusRegions();
+            int outerV = tier.outerVRadiusRegions();
+            float regionSize = tier.regionSizeVoxels();
+            for (int dy = -outerV; dy <= outerV; dy++) {
+                for (int dz = -outerH; dz <= outerH; dz++) {
+                    for (int dx = -outerH; dx <= outerH; dx++) {
+                        boolean isInBand = cylinderStreamer.isInTierBand(dx, dy, dz, tier);
+                        if (!isInBand) {
+                            continue;
+                        }
+                        int absRx = rx + dx;
+                        int absRy = ry + dy;
+                        int absRz = rz + dz;
+                        float centerX = absRx * regionSize + regionSize * 0.5f;
+                        float centerY = absRy * regionSize + regionSize * 0.5f;
+                        float centerZ = absRz * regionSize + regionSize * 0.5f;
+                        float ddx = centerX - observerPosition.x;
+                        float ddy = centerY - observerPosition.y;
+                        float ddz = centerZ - observerPosition.z;
+                        float distanceSq = ddx * ddx + ddy * ddy + ddz * ddz;
+                        allCandidates.add(new TierCandidate(
+                                new LodRegionKey(absRx, absRy, absRz, tier.lodLevel()),
+                                distanceSq));
+                    }
+                }
+            }
+        }
+        return allCandidates;
+    }
+
+    private record TierCandidate(LodRegionKey key, float distanceSq) {}
 
     // ---------------------------------------------------------------
     // Unload
     // ---------------------------------------------------------------
 
     private void maybeUnloadDistantRegions(Vector3 observerPosition, float deltaTime) {
-        int rx = worldToRegion(Math.round(observerPosition.x));
-        int ry = worldToRegion(Math.round(observerPosition.y));
-        int rz = worldToRegion(Math.round(observerPosition.z));
-
-        boolean regionChanged = rx != lastUnloadedRx || ry != lastUnloadedRy || rz != lastUnloadedRz;
+        boolean positionChanged = !Float.isNaN(lastUnloadPosition.x)
+                               && !observerPosition.epsilonEquals(lastUnloadPosition, 0.5f);
 
         unloadTimer += deltaTime;
         boolean isTimeToUnload = unloadTimer >= UNLOAD_INTERVAL_SECONDS;
 
-        boolean shouldUnload = regionChanged || isTimeToUnload;
+        boolean shouldUnload = positionChanged || isTimeToUnload || Float.isNaN(lastUnloadPosition.x);
         if (!shouldUnload) {
             return;
         }
@@ -175,17 +176,19 @@ public class LodStreamer {
         if (isTimeToUnload) {
             unloadTimer = 0f;
         }
-        lastUnloadedRx = rx;
-        lastUnloadedRy = ry;
-        lastUnloadedRz = rz;
+        lastUnloadPosition.set(observerPosition);
 
         List<LodRegionKey> toRemove = new ArrayList<>();
         for (LodRegionKey key : proxyPort.getLoadedRegionKeys()) {
+            LodTierConfig tier = LodConfig.TIERS.get(key.lodLevel());
+            int rx = worldToRegionForTier(Math.round(observerPosition.x), tier);
+            int ry = worldToRegionForTier(Math.round(observerPosition.y), tier);
+            int rz = worldToRegionForTier(Math.round(observerPosition.z), tier);
             int dx = key.regionX() - rx;
             int dy = key.regionY() - ry;
             int dz = key.regionZ() - rz;
-            boolean isNoLongerInBand = !cylinderStreamer.isInLodBand(dx, dy, dz);
-            if (isNoLongerInBand) {
+            boolean isNoLongerInUnloadZone = !cylinderStreamer.isInTierUnloadZone(dx, dy, dz, tier, UNLOAD_HYSTERESIS_REGIONS);
+            if (isNoLongerInUnloadZone) {
                 toRemove.add(key);
             }
         }
@@ -197,10 +200,10 @@ public class LodStreamer {
     }
 
     // ---------------------------------------------------------------
-    // Coordinate helpers
+    // Helpers
     // ---------------------------------------------------------------
 
-    private static int worldToRegion(int worldCoord) {
-        return Math.floorDiv(worldCoord, REGION_SIZE);
+    private static int worldToRegionForTier(int worldCoord, LodTierConfig tier) {
+        return Math.floorDiv(worldCoord, tier.regionSizeVoxels());
     }
 }

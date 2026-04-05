@@ -39,6 +39,9 @@ public interface LodProxyPort {
     /** Removes a region and cancels any pending generation task. */
     LodProxyRegion removeRegion(LodRegionKey key);
 
+    /** Number of regions whose generation task is currently in flight (submitted but not yet completed). */
+    int getPendingRegionCount();
+
     /** Returns the keys of all currently loaded regions. */
     List<LodRegionKey> getLoadedRegionKeys();
 

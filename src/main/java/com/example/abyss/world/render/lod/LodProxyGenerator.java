@@ -11,54 +11,20 @@ import com.example.abyss.world.voxel.VoxelType;
 /**
  * Generates a coarse top-surface proxy mesh for a far-field proxy region.
  * <p>
- * Each proxy region spans {@link WorldConstants#REGION_CHUNKS} chunks on all three axes.
- * All chunks in the region are generated via {@link ProceduralGenerator} — the same
- * pipeline used for near-field chunks — then scanned top-down per XZ column at
- * {@value #SAMPLE_STEP}-voxel intervals to find the highest solid voxel. One upward-facing
- * quad is emitted per column at that height, plus side-wall quads where adjacent columns
- * differ in height.
- * <p>
- * Using the real generator guarantees the LOD surface matches actual chunk geometry.
+ * Region dimensions and sample resolution are driven by the {@link LodTierConfig}
+ * for the requested {@link LodRegionKey#lodLevel()}, making this generator tier-aware
+ * without embedding any streaming policy.
  */
 public final class LodProxyGenerator {
 
-    // ---------------------------------------------------------------
-    // Region geometry — easy to tune
-    // ---------------------------------------------------------------
-
-    /** World-voxel size of one proxy region on all three axes. */
-    public static final int REGION_VOXELS_H = WorldConstants.REGION_CHUNKS * WorldConstants.CHUNK_SIZE;
-
-    /**
-     * Voxels per LOD proxy grid cell (XZ). Tunable via {@link WorldConstants#LOD_PROXY_SAMPLE_STEP}.
-     * Lowering this increases LOD detail (more quads per region).
-     */
-    public static final int SAMPLE_STEP = WorldConstants.LOD_PROXY_SAMPLE_STEP;
-
-    /**
-     * Number of quad columns along X and Z within one region.
-     * Uses ceiling division so the last cell always covers any remainder voxels,
-     * preventing uncovered strips at the region edge that produce visible gaps.
-     */
-    static final int GRID_W = (REGION_VOXELS_H + SAMPLE_STEP - 1) / SAMPLE_STEP;
-
-    /** Sentinel: column contains no solid voxels. */
     private static final int NO_SURFACE = Integer.MIN_VALUE;
-
-    // ---------------------------------------------------------------
-    // Fields
-    // ---------------------------------------------------------------
 
     private final ProceduralGenerator proceduralGenerator;
 
-    /** Caller owns the {@link ProceduralGenerator} factory; each call to the factory produces one instance per thread. */
+    /** Caller owns the {@link ProceduralGenerator} factory; each call produces one instance per thread. */
     public LodProxyGenerator(Supplier<ProceduralGenerator> generatorFactory) {
         this.proceduralGenerator = generatorFactory.get();
     }
-
-    // ---------------------------------------------------------------
-    // Public API
-    // ---------------------------------------------------------------
 
     /**
      * Generates a proxy mesh for the given region key.
@@ -68,28 +34,30 @@ public final class LodProxyGenerator {
      * @return CPU-side mesh data, or {@link MeshData#EMPTY} if the region has no surface
      */
     public MeshData generate(LodRegionKey key) {
-        int baseChunkX = key.regionX() * WorldConstants.REGION_CHUNKS;
-        int baseChunkY = key.regionY() * WorldConstants.REGION_CHUNKS;
-        int baseChunkZ = key.regionZ() * WorldConstants.REGION_CHUNKS;
+        LodTierConfig tier = LodConfig.TIERS.get(key.lodLevel());
+        int regionSizeChunks = tier.regionSizeChunks();
+        int regionVoxelsH = tier.regionSizeVoxels();
+        int sampleStep = tier.sampleStep();
+        int gridW = (regionVoxelsH + sampleStep - 1) / sampleStep;
+
+        int baseChunkX = key.regionX() * regionSizeChunks;
+        int baseChunkY = key.regionY() * regionSizeChunks;
+        int baseChunkZ = key.regionZ() * regionSizeChunks;
 
         int worldBaseX = baseChunkX * WorldConstants.CHUNK_SIZE;
         int worldBaseY = baseChunkY * WorldConstants.CHUNK_SIZE;
         int worldBaseZ = baseChunkZ * WorldConstants.CHUNK_SIZE;
 
-        VoxelData[][] chunks = generateRegionChunks(baseChunkX, baseChunkY, baseChunkZ);
-        return buildSurfaceMesh(chunks, worldBaseX, worldBaseY, worldBaseZ);
+        VoxelData[][] chunks = generateRegionChunks(baseChunkX, baseChunkY, baseChunkZ, regionSizeChunks);
+        return buildSurfaceMesh(chunks, worldBaseX, worldBaseY, worldBaseZ, regionSizeChunks, regionVoxelsH, sampleStep, gridW);
     }
 
     // ---------------------------------------------------------------
     // Chunk generation
     // ---------------------------------------------------------------
 
-    /**
-     * Generates every chunk in this region using the full procedural pipeline.
-     * Indexed as {@code chunksByY[dcy][dcz * REGION_CHUNKS + dcx]}.
-     */
-    private VoxelData[][] generateRegionChunks(int baseChunkX, int baseChunkY, int baseChunkZ) {
-        int rc = WorldConstants.REGION_CHUNKS;
+    private VoxelData[][] generateRegionChunks(int baseChunkX, int baseChunkY, int baseChunkZ, int regionSizeChunks) {
+        int rc = regionSizeChunks;
         VoxelData[][] chunksByY = new VoxelData[rc][rc * rc];
         for (int dcy = 0; dcy < rc; dcy++) {
             for (int dcz = 0; dcz < rc; dcz++) {
@@ -110,12 +78,13 @@ public final class LodProxyGenerator {
     // ---------------------------------------------------------------
 
     private MeshData buildSurfaceMesh(VoxelData[][] chunksByY,
-                                      int worldBaseX, int worldBaseY, int worldBaseZ) {
-        int[] surfaceWorldY = resolveSurfaceHeights(chunksByY, worldBaseX, worldBaseY, worldBaseZ);
-        Color[] surfaceColor = resolveSurfaceColors(chunksByY, surfaceWorldY, worldBaseY);
+                                      int worldBaseX, int worldBaseY, int worldBaseZ,
+                                      int regionSizeChunks, int regionVoxelsH, int sampleStep, int gridW) {
+        int[] surfaceWorldY = resolveSurfaceHeights(chunksByY, worldBaseX, worldBaseY, worldBaseZ, regionSizeChunks, regionVoxelsH, sampleStep, gridW);
+        Color[] surfaceColor = resolveSurfaceColors(chunksByY, surfaceWorldY, worldBaseY, regionSizeChunks, sampleStep, gridW);
 
         ProxyMeshSectionBuilder opaque = new ProxyMeshSectionBuilder();
-        emitSurfaceGeometry(opaque, surfaceWorldY, surfaceColor, worldBaseY);
+        emitSurfaceGeometry(opaque, surfaceWorldY, surfaceColor, worldBaseY, regionVoxelsH, sampleStep, gridW);
 
         if (opaque.isEmpty()) {
             return MeshData.EMPTY;
@@ -123,67 +92,49 @@ public final class LodProxyGenerator {
         return opaque.toMeshData();
     }
 
-    /**
-     * Pass 1: resolves the highest solid world-Y for every grid cell.
-     * Returns {@link #NO_SURFACE} for all-air cells.
-     * <p>
-     * Each cell is sampled at its origin voxel (gx*SAMPLE_STEP, gz*SAMPLE_STEP).
-     * GRID_W uses ceiling division so a partial last cell is always included,
-     * preventing an uncovered strip of voxels at the region edge that would show as gaps.
-     */
     private int[] resolveSurfaceHeights(VoxelData[][] chunksByY,
-                                        int worldBaseX, int worldBaseY, int worldBaseZ) {
-        int[] surfaceWorldY = new int[GRID_W * GRID_W];
-        for (int gz = 0; gz < GRID_W; gz++) {
-            int wz = worldBaseZ + gz * SAMPLE_STEP;
-            for (int gx = 0; gx < GRID_W; gx++) {
-                int wx = worldBaseX + gx * SAMPLE_STEP;
-                surfaceWorldY[gz * GRID_W + gx] =
-                        findTopmostSolidY(chunksByY, wx, wz, worldBaseX, worldBaseY, worldBaseZ);
+                                        int worldBaseX, int worldBaseY, int worldBaseZ,
+                                        int regionSizeChunks, int regionVoxelsH, int sampleStep, int gridW) {
+        int[] surfaceWorldY = new int[gridW * gridW];
+        for (int gz = 0; gz < gridW; gz++) {
+            int wz = worldBaseZ + gz * sampleStep;
+            for (int gx = 0; gx < gridW; gx++) {
+                int wx = worldBaseX + gx * sampleStep;
+                surfaceWorldY[gz * gridW + gx] =
+                        findTopmostSolidY(chunksByY, wx, wz, worldBaseX, worldBaseY, worldBaseZ, regionSizeChunks);
             }
         }
         return surfaceWorldY;
     }
 
-    /**
-     * Pass 2: resolves the surface color for each non-air grid cell.
-     * Null entries indicate all-air cells.
-     */
     private Color[] resolveSurfaceColors(VoxelData[][] chunksByY,
                                          int[] surfaceWorldY,
-                                         int worldBaseY) {
-        Color[] surfaceColor = new Color[GRID_W * GRID_W];
-        for (int gz = 0; gz < GRID_W; gz++) {
-            int wz = gz * SAMPLE_STEP;
-            for (int gx = 0; gx < GRID_W; gx++) {
-                int wx = gx * SAMPLE_STEP;
-                int idx = gz * GRID_W + gx;
+                                         int worldBaseY,
+                                         int regionSizeChunks, int sampleStep, int gridW) {
+        Color[] surfaceColor = new Color[gridW * gridW];
+        for (int gz = 0; gz < gridW; gz++) {
+            int wz = gz * sampleStep;
+            for (int gx = 0; gx < gridW; gx++) {
+                int wx = gx * sampleStep;
+                int idx = gz * gridW + gx;
                 int topmostY = surfaceWorldY[idx];
                 boolean hasSurface = topmostY != NO_SURFACE;
                 if (hasSurface) {
-                    surfaceColor[idx] = voxelColor(chunksByY, wx, topmostY, wz, worldBaseY);
+                    surfaceColor[idx] = voxelColor(chunksByY, wx, topmostY, wz, worldBaseY, regionSizeChunks);
                 }
             }
         }
         return surfaceColor;
     }
 
-    /**
-     * Pass 3: emits a top-face quad for each solid cell, plus side-wall quads
-     * wherever this cell is higher than a cardinal neighbour.
-     * <p>
-     * The last cell in each axis may be narrower than {@value #SAMPLE_STEP} when
-     * REGION_VOXELS_H is not an exact multiple of SAMPLE_STEP. The actual cell
-     * width is clamped to the remaining voxels so the quad exactly covers the region edge.
-     */
     private void emitSurfaceGeometry(ProxyMeshSectionBuilder opaque,
                                      int[] surfaceWorldY, Color[] surfaceColor,
-                                     int worldBaseY) {
-        for (int gz = 0; gz < GRID_W; gz++) {
-            int cellH = Math.min(SAMPLE_STEP, REGION_VOXELS_H - gz * SAMPLE_STEP);
-            for (int gx = 0; gx < GRID_W; gx++) {
-                int cellW = Math.min(SAMPLE_STEP, REGION_VOXELS_H - gx * SAMPLE_STEP);
-                int idx = gz * GRID_W + gx;
+                                     int worldBaseY, int regionVoxelsH, int sampleStep, int gridW) {
+        for (int gz = 0; gz < gridW; gz++) {
+            int cellH = Math.min(sampleStep, regionVoxelsH - gz * sampleStep);
+            for (int gx = 0; gx < gridW; gx++) {
+                int cellW = Math.min(sampleStep, regionVoxelsH - gx * sampleStep);
+                int idx = gz * gridW + gx;
                 int topmostWorldY = surfaceWorldY[idx];
 
                 boolean columnIsAllAir = topmostWorldY == NO_SURFACE;
@@ -191,60 +142,54 @@ public final class LodProxyGenerator {
                     continue;
                 }
 
-                float lx = gx * SAMPLE_STEP;
-                float lz = gz * SAMPLE_STEP;
+                float lx = gx * sampleStep;
+                float lz = gz * sampleStep;
                 float ly = (topmostWorldY + 1) - worldBaseY;
                 Color color = surfaceColor[idx];
 
-                emitTopFace(opaque, lx, ly, lz, cellW, cellH, color);
-                emitSideWalls(opaque, surfaceWorldY, gx, gz, cellW, cellH, lx, ly, lz, topmostWorldY, color, worldBaseY);
+                emitTopFace(opaque, lx, ly, lz, cellW, cellH, color, sampleStep);
+                emitSideWalls(opaque, surfaceWorldY, gx, gz, cellW, cellH, lx, ly, lz, topmostWorldY, color, worldBaseY, gridW);
             }
         }
     }
 
-    /** Emits a top-face quad sized to the actual cell dimensions (handles partial last cells). */
     private static void emitTopFace(ProxyMeshSectionBuilder opaque,
                                     float lx, float ly, float lz,
-                                    int cellW, int cellH, Color color) {
-        if (cellW == SAMPLE_STEP && cellH == SAMPLE_STEP) {
-            ProxyQuadEmitter.emitQuadY(opaque, lx, ly, lz, SAMPLE_STEP, color);
+                                    int cellW, int cellH, Color color, int sampleStep) {
+        boolean isFullCell = cellW == sampleStep && cellH == sampleStep;
+        if (isFullCell) {
+            ProxyQuadEmitter.emitQuadY(opaque, lx, ly, lz, sampleStep, color);
         } else {
             ProxyQuadEmitter.emitQuadYSized(opaque, lx, ly, lz, cellW, cellH, color);
         }
     }
 
-    /**
-     * Emits side-wall quads for the four cardinal neighbours of the given cell.
-     * A wall is emitted when this cell is higher than the neighbour.
-     * Cells at the region edge treat the out-of-bounds neighbour as {@link #NO_SURFACE}
-     * so the boundary is always sealed and no gap opens toward an adjacent region.
-     */
     private void emitSideWalls(ProxyMeshSectionBuilder opaque, int[] surfaceWorldY,
                                 int gx, int gz, int cellW, int cellH,
                                 float lx, float ly, float lz,
-                                int topmostWorldY, Color color, int worldBaseY) {
-        int negZNeighbourY = (gz > 0) ? surfaceWorldY[(gz - 1) * GRID_W + gx] : NO_SURFACE;
+                                int topmostWorldY, Color color, int worldBaseY, int gridW) {
+        int negZNeighbourY = (gz > 0) ? surfaceWorldY[(gz - 1) * gridW + gx] : NO_SURFACE;
         boolean negZIsLower = negZNeighbourY < topmostWorldY;
         if (negZIsLower) {
             float wallBottom = wallBottom(negZNeighbourY, worldBaseY);
             ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz, ly - wallBottom, cellW, color, false);
         }
 
-        int posZNeighbourY = (gz < GRID_W - 1) ? surfaceWorldY[(gz + 1) * GRID_W + gx] : NO_SURFACE;
+        int posZNeighbourY = (gz < gridW - 1) ? surfaceWorldY[(gz + 1) * gridW + gx] : NO_SURFACE;
         boolean posZIsLower = posZNeighbourY < topmostWorldY;
         if (posZIsLower) {
             float wallBottom = wallBottom(posZNeighbourY, worldBaseY);
             ProxyQuadEmitter.emitQuadZFace(opaque, lx, wallBottom, lz + cellH, ly - wallBottom, cellW, color, true);
         }
 
-        int negXNeighbourY = (gx > 0) ? surfaceWorldY[gz * GRID_W + (gx - 1)] : NO_SURFACE;
+        int negXNeighbourY = (gx > 0) ? surfaceWorldY[gz * gridW + (gx - 1)] : NO_SURFACE;
         boolean negXIsLower = negXNeighbourY < topmostWorldY;
         if (negXIsLower) {
             float wallBottom = wallBottom(negXNeighbourY, worldBaseY);
             ProxyQuadEmitter.emitQuadXFace(opaque, lx, wallBottom, lz, ly - wallBottom, cellH, color, false);
         }
 
-        int posXNeighbourY = (gx < GRID_W - 1) ? surfaceWorldY[gz * GRID_W + (gx + 1)] : NO_SURFACE;
+        int posXNeighbourY = (gx < gridW - 1) ? surfaceWorldY[gz * gridW + (gx + 1)] : NO_SURFACE;
         boolean posXIsLower = posXNeighbourY < topmostWorldY;
         if (posXIsLower) {
             float wallBottom = wallBottom(posXNeighbourY, worldBaseY);
@@ -260,15 +205,12 @@ public final class LodProxyGenerator {
     // Chunk scanning helpers
     // ---------------------------------------------------------------
 
-    /**
-     * Scans from the top of the region downward for the given world XZ position.
-     * Returns the world-Y of the highest solid voxel, or {@link #NO_SURFACE} if the column is all air.
-     */
     private int findTopmostSolidY(VoxelData[][] chunksByY,
                                   int wx, int wz,
-                                  int worldBaseX, int worldBaseY, int worldBaseZ) {
+                                  int worldBaseX, int worldBaseY, int worldBaseZ,
+                                  int regionSizeChunks) {
         int size = WorldConstants.CHUNK_SIZE;
-        int rc = WorldConstants.REGION_CHUNKS;
+        int rc = regionSizeChunks;
         for (int dcy = rc - 1; dcy >= 0; dcy--) {
             int dcx = (wx - worldBaseX) / size;
             int dcz = (wz - worldBaseZ) / size;
@@ -286,14 +228,11 @@ public final class LodProxyGenerator {
         return NO_SURFACE;
     }
 
-    /**
-     * Returns the base color of the voxel at the given region-local XZ and world Y.
-     */
     private Color voxelColor(VoxelData[][] chunksByY,
                              int localX, int wy, int localZ,
-                             int worldBaseY) {
+                             int worldBaseY, int regionSizeChunks) {
         int size = WorldConstants.CHUNK_SIZE;
-        int rc = WorldConstants.REGION_CHUNKS;
+        int rc = regionSizeChunks;
         int dcy = (wy - worldBaseY) / size;
         int dcx = localX / size;
         int dcz = localZ / size;

@@ -9,17 +9,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LodStreamerTest {
 
     /**
-     * A region at region-coords (2, 0, 2) should be removed when the player stands at world origin
-     * (region (0,0,0)), because it falls inside the near-field exclusion cylinder.
-     * <p>
-     * With hRadius=14, WorldConstants.REGION_CHUNKS=4, REGION_VOXELS_H=128:
-     *   LOD_EXCLUSION_H_REGIONS = ceil((14 + 4) * 32 / 128) = ceil(4.5) = 5
-     *   dx=2 < 5 and dz=2 < 5 → inside exclusion → no longer in LOD band → must be unloaded.
+     * A region at region-coords (2, 0, 2) with lodLevel=1 should be removed when the player
+     * stands at world origin. Tier 1 has innerHRadiusRegions=16, so dx=2 is inside the inner
+     * exclusion cylinder — not in the band — must be unloaded.
      */
     @Test
     void regionInsideNearChunkRangeIsUnloadedOnUnloadTick() {
@@ -46,8 +45,100 @@ class LodStreamerTest {
         assertFalse(proxyPort.requestedKeys.isEmpty());
     }
 
+    @Test
+    void tier0BufferRegionIsSubmittedBeyondNearField() {
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of());
+        CylinderStreamer cylinderStreamer = new CylinderStreamer(8, 5, 64, 40);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
+
+        streamer.updateForPosition(new Vector3(0f, 0f, 0f), 0.016f);
+
+        boolean submittedTier0 = proxyPort.requestedKeys.stream().anyMatch(k -> k.lodLevel() == 0);
+        assertTrue(submittedTier0, "Tier 0 buffer regions should be submitted on first sweep");
+    }
+
+    @Test
+    void tier2RegionIsPlacedAtCorrectWorldPosition() {
+        LodTierConfig tier2 = LodConfig.TIERS.get(2);
+        int expectedWorldPos = tier2.regionSizeVoxels();
+        assertEquals(256, expectedWorldPos,
+            "Tier 2 region at coord 1 should map to world position 256 (8 chunks * 32 voxels)");
+    }
+
+    @Test
+    void tier1KeyUnloadsUsingTier1Band() {
+        // Tier 1: regionSize=4, innerHRadiusRegions=ceil(16/4)=4, outerHRadiusRegions=32/4=8.
+        // dx=5 is inside [4,8] → in band → must NOT be unloaded.
+        LodRegionKey tier1Key = new LodRegionKey(5, 0, 5, 1);
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of(tier1Key));
+        CylinderStreamer cylinderStreamer = new CylinderStreamer(8, 5, 64, 40);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
+
+        streamer.updateForPosition(new Vector3(0f, 0f, 0f), 5.0f);
+
+        assertFalse(proxyPort.removedKeys.contains(tier1Key),
+            "Tier-1 region inside tier-1 band should not be unloaded");
+    }
+
+    @Test
+    void tier2KeyUnloadsUsingTier2Band() {
+        // Tier 2: regionSize=8, outerHRadiusRegions=64/8=8, hysteresis=1 → unload threshold=9.
+        // dx=10 > 9 → outside unload zone → must be unloaded.
+        LodRegionKey tier2Key = new LodRegionKey(10, 0, 10, 2);
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of(tier2Key));
+        CylinderStreamer cylinderStreamer = new CylinderStreamer(8, 5, 64, 40);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
+
+        streamer.updateForPosition(new Vector3(0f, 0f, 0f), 5.0f);
+
+        assertTrue(proxyPort.removedKeys.contains(tier2Key),
+            "Tier-2 region outside the hysteresis unload zone should be unloaded");
+    }
+
+    @Test
+    void regionJustOutsideLoadBandIsKeptByHysteresis() {
+        // Tier 2: outerHRadiusRegions=8, hysteresis=1 → unload boundary=9.
+        // dx=9 is exactly 1 beyond the load band but still within the unload zone → must NOT be unloaded.
+        LodRegionKey tier2Key = new LodRegionKey(9, 0, 9, 2);
+        TrackingProxyPort proxyPort = new TrackingProxyPort(List.of(tier2Key));
+        CylinderStreamer cylinderStreamer = new CylinderStreamer(8, 5, 64, 40);
+        LodStreamer streamer = new LodStreamer(proxyPort, cylinderStreamer);
+
+        streamer.updateForPosition(new Vector3(0f, 0f, 0f), 5.0f);
+
+        assertFalse(proxyPort.removedKeys.contains(tier2Key),
+            "Region just outside load band should be kept alive by hysteresis padding");
+    }
+
+    @Test
+    void lodConfigValidationRejectsNonContiguousTiers() {
+        // Simulate a gap: tier 1 inner=20 but tier 0 outer=16
+        List<LodTierConfig> bad = List.of(
+            new LodTierConfig(0,  8, 16,  5, 10, 1, 2),
+            new LodTierConfig(1, 20, 36, 10, 20, 1, 4)
+        );
+        assertThrows(IllegalStateException.class, () -> LodConfig.validateTiers(bad));
+    }
+
+    @Test
+    void lodConfigValidationRejectsBufferNotAtNearFieldEdge() {
+        // innerH=10 does not match NEAR_FIELD_H_RADIUS=8
+        List<LodTierConfig> bad = List.of(
+            new LodTierConfig(0, 10, 20, 5, 10, 1, 2)
+        );
+        assertThrows(IllegalStateException.class, () -> LodConfig.validateTiers(bad));
+    }
+
+    @Test
+    void tier2HasLargerRegionSizeThanTier1() {
+        LodTierConfig tier1 = LodConfig.TIERS.get(1);
+        LodTierConfig tier2 = LodConfig.TIERS.get(2);
+        assertTrue(tier2.regionSizeVoxels() > tier1.regionSizeVoxels(),
+            "Tier 2 should have a larger region size than tier 1");
+    }
+
     // ---------------------------------------------------------------
-    // Test doubles — implement LodProxyPort, no subclassing needed
+    // Test doubles
     // ---------------------------------------------------------------
 
     private static final class TrackingProxyPort implements LodProxyPort {
@@ -71,6 +162,8 @@ class LodStreamerTest {
         }
 
         @Override public void reprioritiseProxyMeshAsync(LodRegionKey key, int newPriority) {}
+
+        @Override public int getPendingRegionCount() { return requestedKeys.size(); }
 
         @Override
         public LodProxyRegion removeRegion(LodRegionKey key) {

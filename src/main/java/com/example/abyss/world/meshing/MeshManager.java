@@ -13,6 +13,7 @@ import com.example.abyss.world.VoxelChunk;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Function;
 
 /**
@@ -32,6 +33,15 @@ public class MeshManager {
      * Kept separate and smaller so deletions never eat into upload time.
      */
     private static final long DISPOSAL_BUDGET_NANOS = 2_000_000L; // 2 ms
+
+    /**
+     * Priority for near-field mesh tasks in the shared worker pool.
+     * Intentionally higher-numbered (lower urgency) than near-field chunk gen (0..~5000)
+     * so generation completes before meshing, but lower-numbered than
+     * {@link com.example.abyss.world.render.lod.LodProxyManager#LOD_PRIORITY_OFFSET}
+     * so mesh tasks execute before any LOD generation work.
+     */
+    public static final int MESH_PRIORITY = 10_000;
 
     private final KeyedTaskQueue<ChunkKey, MeshData> taskQueue;
 
@@ -55,9 +65,9 @@ public class MeshManager {
      */
     private final MeshingNeighbourPolicy neighbourPolicy;
 
-    public MeshManager() {
+    public MeshManager(ThreadPoolExecutor sharedPool) {
         this.taskQueue = KeyedTaskQueue.<ChunkKey, MeshData>builder()
-                .threadNamePrefix("ChunkMesh")
+                .executor(sharedPool)
                 .build();
         this.neighbourPolicy = new SameResolutionNeighbourPolicy();
     }
@@ -87,7 +97,7 @@ public class MeshManager {
         VoxelChunk minusZ = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1));
 
         ChunkMesher.NeighbourChunks neighbours = new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ);
-        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, neighbours));
+        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, neighbours), MESH_PRIORITY);
         if (submitted) {
             renderState.setMeshQueued(true);
         }

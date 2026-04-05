@@ -11,30 +11,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * A generic, keyed asynchronous task queue backed by a fixed thread pool.
+ * A generic, keyed asynchronous task queue backed by a {@link ThreadPoolExecutor}.
  * <p>
- * Works like a normal work queue — call {@link #submit(Object, Supplier)} with
- * a key and a unit of work. Duplicate submissions for the same key are silently
- * ignored until that key is forgotten or cancelled. Completed results are
- * collected on the main thread via {@link #pollCompleted()}.
+ * Call {@link #submit(Object, Supplier)} with a key and a unit of work.
+ * Duplicate submissions for the same key are silently ignored until that key is
+ * forgotten or cancelled. Completed results are collected on the main thread via
+ * {@link #pollCompleted()}.
  * </p>
- *
- * <pre>{@code
- * // Setup (once)
- * KeyedTaskQueue<ChunkKey, VoxelChunk> queue = KeyedTaskQueue
- *     .<ChunkKey, VoxelChunk>builder()
- *     .threadNamePrefix("ChunkGen")
- *     .build();
- *
- * // Per-frame
- * queue.submit(key, () -> generateChunk(key));   // non-blocking
- * for (var result : queue.pollCompleted()) {      // drain results
- *     loaded.put(result.key(), result.value());
- * }
- * }</pre>
+ * <p>
+ * Use {@link Builder#executor(ThreadPoolExecutor)} to supply a shared pool (preferred),
+ * or omit it to let {@link Builder#build()} create a private bounded pool sized to
+ * {@link com.example.abyss.WorldConstants#BACKGROUND_THREAD_BUDGET}.
+ * </p>
  *
  * @param <K> the key type used to identify and deduplicate tasks
  * @param <V> the result type produced by each task
@@ -54,26 +46,15 @@ public class KeyedTaskQueue<K, V> {
     /** The thread pool that executes tasks in priority order. */
     private final ThreadPoolExecutor pool;
 
-    private KeyedTaskQueue(Builder<K, V> builder) {
-        int threadCount = resolveThreadCount(builder);
-        String threadNamePrefix = builder.threadNamePrefix;
-        this.pool = new ThreadPoolExecutor(
-                threadCount, threadCount,
-                0L, TimeUnit.MILLISECONDS,
-                new PriorityBlockingQueue<>(),
-                runnable -> {
-                    Thread thread = new Thread(runnable, threadNamePrefix);
-                    thread.setDaemon(true);
-                    return thread;
-                }
-        );
-    }
+    /**
+     * When {@code true} the pool was provided externally and its lifecycle is
+     * owned by the caller — {@link #shutdown()} is a no-op.
+     */
+    private final boolean externalPool;
 
-    private int resolveThreadCount(Builder<K, V> builder) {
-        if (builder.threadCount > 0) {
-            return builder.threadCount;
-        }
-        return Math.max(1, Runtime.getRuntime().availableProcessors() - 1);
+    private KeyedTaskQueue(ThreadPoolExecutor pool, boolean externalPool) {
+        this.pool = pool;
+        this.externalPool = externalPool;
     }
 
     /**
@@ -121,30 +102,49 @@ public class KeyedTaskQueue<K, V> {
 
     public static final class Builder<K, V> {
 
-        private String threadNamePrefix = "KeyedTaskQueue";
-        private int threadCount = 0; // 0 = auto (cores - 1)
+        private ThreadPoolExecutor executor = null;
 
-        private Builder() {
-        }
+        private Builder() {}
 
-        /** Prefix applied to worker thread names. Defaults to {@code "KeyedTaskQueue"}. */
-        public Builder<K, V> threadNamePrefix(String prefix) {
-            this.threadNamePrefix = prefix;
+        /**
+         * Provides an externally-owned {@link ThreadPoolExecutor}.
+         * The caller retains full ownership of the pool's lifecycle —
+         * {@link KeyedTaskQueue#shutdown()} will be a no-op.
+         * <p>
+         * The executor's work queue must be a {@link PriorityBlockingQueue}
+         * for priority ordering to function correctly.
+         * </p>
+         */
+        public Builder<K, V> executor(ThreadPoolExecutor sharedExecutor) {
+            this.executor = sharedExecutor;
             return this;
         }
 
         /**
-         * Fixed number of worker threads. Pass {@code 0} (or omit) to
-         * auto-size to {@code max(1, availableProcessors − 1)}.
+         * Builds the {@link KeyedTaskQueue}. If no executor was provided, creates a
+         * private daemon pool sized to
+         * {@link com.example.abyss.WorldConstants#BACKGROUND_THREAD_BUDGET}.
          */
-        public Builder<K, V> threadCount(int count) {
-            this.threadCount = count;
-            return this;
+        public KeyedTaskQueue<K, V> build() {
+            if (executor != null) {
+                return new KeyedTaskQueue<>(executor, true);
+            }
+            return new KeyedTaskQueue<>(createDefaultPool(), false);
         }
 
-        /** Builds the {@link KeyedTaskQueue}. */
-        public KeyedTaskQueue<K, V> build() {
-            return new KeyedTaskQueue<>(this);
+        private static ThreadPoolExecutor createDefaultPool() {
+            int threadCount = com.example.abyss.WorldConstants.BACKGROUND_THREAD_BUDGET;
+            AtomicInteger counter = new AtomicInteger();
+            return new ThreadPoolExecutor(
+                    threadCount, threadCount,
+                    0L, TimeUnit.MILLISECONDS,
+                    new PriorityBlockingQueue<>(),
+                    r -> {
+                        Thread t = new Thread(r, "KeyedTaskQueue-" + counter.getAndIncrement());
+                        t.setDaemon(true);
+                        return t;
+                    }
+            );
         }
     }
 
@@ -321,8 +321,10 @@ public class KeyedTaskQueue<K, V> {
     // Lifecycle
     // ----------------------------------------------------------------
 
-    /** Shuts down the thread pool immediately. Call on game exit. */
+    /** Shuts down the thread pool immediately. No-op if the pool is externally owned. Call on game exit. */
     public void shutdown() {
-        pool.shutdownNow();
+        if (!externalPool) {
+            pool.shutdownNow();
+        }
     }
 }

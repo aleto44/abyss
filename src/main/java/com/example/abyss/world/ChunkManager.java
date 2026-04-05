@@ -1,10 +1,12 @@
 package com.example.abyss.world;
 
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
+import com.example.abyss.WorldConstants;
 import com.example.abyss.util.KeyedTaskQueue;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import java.util.function.Supplier;
+import java.util.concurrent.ThreadPoolExecutor;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshManager;
 
@@ -48,19 +50,27 @@ public class ChunkManager {
     private final KeyedTaskQueue<ChunkKey, VoxelChunk> taskQueue;
     private final MeshManager meshManager;
 
-    /** Preferred constructor — caller owns the {@link ProceduralGenerator} factory. */
-    public ChunkManager(Supplier<ProceduralGenerator> generatorFactory) {
+    /** Preferred constructor — caller owns the {@link ProceduralGenerator} factory and shared pool. */
+    public ChunkManager(Supplier<ProceduralGenerator> generatorFactory, ThreadPoolExecutor sharedPool) {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<ChunkKey, VoxelChunk>builder()
-                .threadNamePrefix("ChunkGen")
-                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors() / 2))
+                .executor(sharedPool)
                 .build();
-        this.meshManager = new MeshManager();
+        this.meshManager = new MeshManager(sharedPool);
     }
 
     /** Convenience overload — builds the factory internally from seed and resolver. */
+    public ChunkManager(long seed, GenConfigResolver resolver, ThreadPoolExecutor sharedPool) {
+        this(() -> new ProceduralGenerator(seed, resolver), sharedPool);
+    }
+
+    /** Convenience overload for tests — creates a private minimal thread pool. */
     public ChunkManager(long seed, GenConfigResolver resolver) {
-        this(() -> new ProceduralGenerator(seed, resolver));
+        this(seed, resolver, new ThreadPoolExecutor(
+                2, 2, 0L, java.util.concurrent.TimeUnit.MILLISECONDS,
+                new java.util.concurrent.PriorityBlockingQueue<>(),
+                r -> { Thread t = new Thread(r, "ChunkGen-test"); t.setDaemon(true); return t; }
+        ));
     }
 
     private VoxelChunk buildChunk(ChunkKey key) {

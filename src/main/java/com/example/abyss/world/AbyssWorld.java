@@ -1,6 +1,7 @@
 package com.example.abyss.world;
 
 import com.example.abyss.WorldConstants;
+import com.example.abyss.util.SharedWorkerPool;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.ProceduralGenerator;
 import com.example.abyss.world.meshing.MeshCoordinator;
@@ -8,9 +9,11 @@ import com.example.abyss.world.render.CylinderStreamer;
 import com.example.abyss.world.render.NearChunkStreamer;
 import com.example.abyss.world.render.WorldRenderSnapshot;
 import com.example.abyss.world.render.WorldRenderSource;
+import com.example.abyss.world.render.lod.LodConfig;
 import com.example.abyss.world.render.lod.LodProxyGenerator;
 import com.example.abyss.world.render.lod.LodProxyManager;
 import com.example.abyss.world.render.lod.LodStreamer;
+import com.example.abyss.world.render.lod.LodTierConfig;
 
 import java.util.function.Supplier;
 
@@ -58,19 +61,20 @@ public class AbyssWorld implements WorldRenderSource {
    */
   public void init() {
     Supplier<ProceduralGenerator> generatorFactory = () -> new ProceduralGenerator(seed, resolver);
-    chunkManager = new ChunkManager(generatorFactory);
+    chunkManager = new ChunkManager(generatorFactory, SharedWorkerPool.get().executor());
     meshCoordinator = new MeshCoordinator(chunkManager);
     voxelAccess = new WorldVoxelAccess(chunkManager);
     voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
     chunkLoader = new ChunkLoader(chunkManager, meshCoordinator);
+    LodTierConfig outermostTier = LodConfig.TIERS.get(LodConfig.TIERS.size() - 1);
     cylinderStreamer = new CylinderStreamer(
         WorldConstants.NEAR_FIELD_H_RADIUS,
         WorldConstants.NEAR_FIELD_V_RADIUS,
-        WorldConstants.LOD_BAND_H_RADIUS / WorldConstants.REGION_CHUNKS,
-        WorldConstants.LOD_BAND_V_RADIUS / WorldConstants.REGION_CHUNKS
+        outermostTier.outerHRadiusRegions(),
+        outermostTier.outerVRadiusRegions()
     );
     chunkStreamer = new NearChunkStreamer(chunkLoader, cylinderStreamer);
-    lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(generatorFactory));
+    lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(generatorFactory), SharedWorkerPool.get().executor());
     lodStreamer = new LodStreamer(lodProxyManager, cylinderStreamer);
     worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager, lodStreamer);
   }
@@ -134,6 +138,7 @@ public class AbyssWorld implements WorldRenderSource {
     if (lodProxyManager != null) {
       lodProxyManager.shutdown();
     }
+    SharedWorkerPool.get().shutdown();
   }
 
   @Override

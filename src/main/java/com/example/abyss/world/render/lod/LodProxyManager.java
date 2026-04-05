@@ -15,6 +15,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 /**
@@ -42,6 +45,15 @@ public class LodProxyManager implements LodProxyPort {
      */
     private static final long UPLOAD_BUDGET_NANOS = 4_000_000L; // 4 ms
 
+    /**
+     * Priority base added to all LOD generation tasks in the shared worker pool.
+     * Ensures LOD generation always executes after near-field mesh tasks
+     * ({@link com.example.abyss.world.meshing.MeshManager#MESH_PRIORITY} = 10_000)
+     * and well after near-field chunk generation (priority 0..~5000).
+     * Distance-based ordering within the LOD tier is preserved as a relative offset.
+     */
+    public static final int LOD_PRIORITY_OFFSET = 100_000_000;
+
     private final Map<LodRegionKey, LodProxyRegion> loadedRegions = new LinkedHashMap<>();
     private final KeyedTaskQueue<LodRegionKey, MeshData> taskQueue;
     private final ThreadLocal<LodProxyGenerator> generatorLocal;
@@ -52,12 +64,20 @@ public class LodProxyManager implements LodProxyPort {
      */
     private final BudgetedDrainQueue<LodProxyMeshState> promotionQueue = new BudgetedDrainQueue<>();
 
-    public LodProxyManager(Supplier<LodProxyGenerator> generatorFactory) {
+    public LodProxyManager(Supplier<LodProxyGenerator> generatorFactory, ThreadPoolExecutor sharedPool) {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
         this.taskQueue = KeyedTaskQueue.<LodRegionKey, MeshData>builder()
-                .threadNamePrefix("LodProxyGen")
-                .threadCount(Math.max(2, Runtime.getRuntime().availableProcessors() / 2))
+                .executor(sharedPool)
                 .build();
+    }
+
+    /** Convenience overload for tests — creates a private minimal thread pool. */
+    public LodProxyManager(Supplier<LodProxyGenerator> generatorFactory) {
+        this(generatorFactory, new ThreadPoolExecutor(
+                2, 2, 0L, TimeUnit.MILLISECONDS,
+                new PriorityBlockingQueue<>(),
+                r -> { Thread t = new Thread(r, "LodProxyGen-test"); t.setDaemon(true); return t; }
+        ));
     }
 
     // ----------------------------------------------------------------
@@ -70,11 +90,13 @@ public class LodProxyManager implements LodProxyPort {
         if (alreadyLoaded) {
             return false;
         }
-        boolean submitted = taskQueue.submit(key, () -> generatorLocal.get().generate(key), priority);
+        int adjustedPriority = LOD_PRIORITY_OFFSET + priority;
+        boolean submitted = taskQueue.submit(key, () -> generatorLocal.get().generate(key), adjustedPriority);
         if (submitted) {
-            float worldX = key.regionX() * LodProxyGenerator.REGION_VOXELS_H;
-            float worldY = key.regionY() * LodProxyGenerator.REGION_VOXELS_H;
-            float worldZ = key.regionZ() * LodProxyGenerator.REGION_VOXELS_H;
+            LodTierConfig tier = LodConfig.TIERS.get(key.lodLevel());
+            float worldX = key.regionX() * tier.regionSizeVoxels();
+            float worldY = key.regionY() * tier.regionSizeVoxels();
+            float worldZ = key.regionZ() * tier.regionSizeVoxels();
             loadedRegions.put(key, new LodProxyRegion(key, worldX, worldY, worldZ, new LodProxyMeshState()));
         }
         return submitted;
@@ -82,7 +104,7 @@ public class LodProxyManager implements LodProxyPort {
 
     @Override
     public void reprioritiseProxyMeshAsync(LodRegionKey key, int newPriority) {
-        taskQueue.reprioritise(key, newPriority);
+        taskQueue.reprioritise(key, LOD_PRIORITY_OFFSET + newPriority);
     }
 
     @Override
@@ -90,6 +112,11 @@ public class LodProxyManager implements LodProxyPort {
         boolean isLoaded = loadedRegions.containsKey(key);
         boolean isPending = taskQueue.isKnown(key);
         return isLoaded || isPending;
+    }
+
+    @Override
+    public int getPendingRegionCount() {
+        return taskQueue.pendingCount();
     }
 
     @Override

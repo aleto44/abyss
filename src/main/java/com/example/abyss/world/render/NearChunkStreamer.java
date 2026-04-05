@@ -40,7 +40,7 @@ public class NearChunkStreamer {
    * Minimum seconds between movement-triggered sweeps.
    * Chunk-boundary crossings still trigger an immediate sweep.
    */
-  private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS = 0.25f;
+  private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS = 0.1f;
   /**
    * Maximum number of chunk requests submitted in a single sweep.
    * Caps queue depth so the generation workers are not flooded with thousands of tasks at once.

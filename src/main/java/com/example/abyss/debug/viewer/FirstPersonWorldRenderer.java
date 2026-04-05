@@ -16,9 +16,10 @@ import com.example.abyss.world.render.ChunkCuller;
 import com.example.abyss.world.render.LodRenderEntry;
 import com.example.abyss.world.render.RenderMeshSource;
 import com.example.abyss.world.render.WorldRenderSnapshot;
-import com.example.abyss.world.render.lod.LodProxyGenerator;
+import com.example.abyss.world.render.lod.LodConfig;
 import com.example.abyss.world.render.lod.LodProxyMeshState;
 import com.example.abyss.world.render.lod.LodProxyRegion;
+import com.example.abyss.world.render.lod.LodTierConfig;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,8 +31,6 @@ import java.util.function.Function;
 public class FirstPersonWorldRenderer {
 
     private static final float[] TINT_NORMAL = { 1.0f, 1.0f, 1.0f };
-    private static final float[] TINT_LOD    = { 0.72f, 0.85f, 1.0f };
-
     private final Matrix4 modelMatrix = new Matrix4();
     private final Matrix4 modelViewProjectionMatrix = new Matrix4();
     private final ChunkCuller chunkCuller = new ChunkCuller();
@@ -77,14 +76,14 @@ public class FirstPersonWorldRenderer {
 
         // --- Far-field opaque pass ---
         for (LodRenderEntry entry : renderSnapshot.farFieldEntries()) {
+            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
+            float regionSize = tier.regionSizeVoxels();
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
-                    LodProxyGenerator.REGION_VOXELS_H,
-                    LodProxyGenerator.REGION_VOXELS_H,
-                    LodProxyGenerator.REGION_VOXELS_H);
+                    regionSize, regionSize, regionSize);
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_LOD);
+            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_NORMAL);
         }
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
@@ -102,14 +101,14 @@ public class FirstPersonWorldRenderer {
 
         // --- Far-field transparent pass ---
         for (LodRenderEntry entry : renderSnapshot.farFieldEntries()) {
+            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
+            float regionSize = tier.regionSizeVoxels();
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
-                    LodProxyGenerator.REGION_VOXELS_H,
-                    LodProxyGenerator.REGION_VOXELS_H,
-                    LodProxyGenerator.REGION_VOXELS_H);
+                    regionSize, regionSize, regionSize);
             if (!isFrustumVisible) {
                 continue;
             }
-            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_LOD);
+            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_NORMAL);
         }
 
         Gdx.gl.glDepthMask(true);
