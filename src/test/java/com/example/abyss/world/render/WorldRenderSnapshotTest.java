@@ -1,9 +1,9 @@
 package com.example.abyss.world.render;
 
 import com.example.abyss.world.AbyssWorld;
-import com.example.abyss.world.render.lod.LodProxyMeshState;
-import com.example.abyss.world.render.lod.LodProxyRegion;
-import com.example.abyss.world.render.lod.LodRegionKey;
+import com.example.abyss.world.render.distant.DistantMeshState;
+import com.example.abyss.world.render.distant.DistantRegion;
+import com.example.abyss.world.render.distant.DistantRegionKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,11 +27,11 @@ class WorldRenderSnapshotTest {
     }
 
     @Test
-    void renderSnapshotStartsEmptyForNearAndFarField() {
+    void renderSnapshotStartsEmptyForNearAndDistantTerrain() {
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
         assertTrue(renderSnapshot.nearFieldEntries().isEmpty());
-        assertTrue(renderSnapshot.farFieldEntries().isEmpty());
+        assertTrue(renderSnapshot.distantTerrainEntries().isEmpty());
     }
 
     @Test
@@ -42,22 +42,21 @@ class WorldRenderSnapshotTest {
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
         assertEquals(2, renderSnapshot.nearFieldEntries().size());
-        assertTrue(renderSnapshot.farFieldEntries().isEmpty());
+        assertTrue(renderSnapshot.distantTerrainEntries().isEmpty());
     }
 
     @Test
-    void renderSnapshotIncludesFarFieldEntriesFromProxyManager() {
-        LodRegionKey key = new LodRegionKey(1, 2, 3, 1);
-        LodProxyRegion region = new LodProxyRegion(key, 32.0f, 64.0f, 96.0f, new LodProxyMeshState());
-        world.getLodProxyManager().putRegion(region);
+    void renderSnapshotIncludesDistantTerrainEntriesFromManager() {
+        DistantRegionKey key = new DistantRegionKey(1, 2, 3);
+        DistantRegion region = new DistantRegion(key, 32.0f, 64.0f, 96.0f, new DistantMeshState());
+        world.getDistantTerrainManager().putRegion(region);
 
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
         assertTrue(renderSnapshot.nearFieldEntries().isEmpty());
-        assertEquals(1, renderSnapshot.farFieldEntries().size());
-        assertEquals(32.0f, renderSnapshot.farFieldEntries().get(0).worldX());
-        assertEquals(64.0f, renderSnapshot.farFieldEntries().get(0).worldY());
-        assertEquals(96.0f, renderSnapshot.farFieldEntries().get(0).worldZ());
-        assertEquals(1, renderSnapshot.farFieldEntries().get(0).lodLevel());
+        assertEquals(1, renderSnapshot.distantTerrainEntries().size());
+        assertEquals(32.0f, renderSnapshot.distantTerrainEntries().get(0).worldX());
+        assertEquals(64.0f, renderSnapshot.distantTerrainEntries().get(0).worldY());
+        assertEquals(96.0f, renderSnapshot.distantTerrainEntries().get(0).worldZ());
     }
 }

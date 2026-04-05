@@ -9,28 +9,24 @@ import com.example.abyss.world.render.CylinderStreamer;
 import com.example.abyss.world.render.NearChunkStreamer;
 import com.example.abyss.world.render.WorldRenderSnapshot;
 import com.example.abyss.world.render.WorldRenderSource;
-import com.example.abyss.world.render.lod.LodConfig;
-import com.example.abyss.world.render.lod.LodProxyGenerator;
-import com.example.abyss.world.render.lod.LodProxyManager;
-import com.example.abyss.world.render.lod.LodStreamer;
-import com.example.abyss.world.render.lod.LodTierConfig;
+import com.example.abyss.world.render.distant.DistantTerrainGenerator;
+import com.example.abyss.world.render.distant.DistantTerrainManager;
+import com.example.abyss.world.render.distant.DistantTerrainStreamer;
 
 import java.util.function.Supplier;
 
 /**
  * Top-level façade for the Abyss world.
  * <p>
- * Constructs and wires together the four collaborator objects:
+ * Constructs and wires together all subsystems:
  * <ul>
  *   <li>{@link ChunkManager} — chunk storage, async generation, and mesh queuing</li>
  *   <li>{@link WorldVoxelAccess} — world-to-chunk coordinate math and voxel read/write</li>
  *   <li>{@link MeshCoordinator} — mesh dirty/queue/poll lifecycle and render queries</li>
  *   <li>{@link ChunkLoader} — load/unload scheduling around the player</li>
  *   <li>{@link NearChunkStreamer} — near-field streaming policy</li>
+ *   <li>{@link DistantTerrainStreamer} — permanent distant terrain background layer</li>
  * </ul>
- * {@link LodStreamer} is constructed from the same shared cylinder configuration,
- * so the LOD exclusion zone is always derived from the actual near-field radius — it is
- * not possible to accidentally configure them with mismatched radii.
  * </p>
  */
 public class AbyssWorld implements WorldRenderSource {
@@ -42,9 +38,9 @@ public class AbyssWorld implements WorldRenderSource {
   private MeshCoordinator meshCoordinator;
   private ChunkLoader chunkLoader;
   private WorldDebugStatsProvider worldDebugStatsProvider;
-  private LodProxyManager lodProxyManager;
+  private DistantTerrainManager distantTerrainManager;
   private NearChunkStreamer chunkStreamer;
-  private LodStreamer lodStreamer;
+  private DistantTerrainStreamer distantTerrainStreamer;
   private CylinderStreamer cylinderStreamer;
 
   public AbyssWorld(long seed) {
@@ -56,9 +52,7 @@ public class AbyssWorld implements WorldRenderSource {
     this.resolver = resolver;
   }
 
-  /**
-   * Initialises the generation pipeline and all collaborator objects. Call once.
-   */
+  /** Initialises the generation pipeline and all collaborator objects. Call once. */
   public void init() {
     Supplier<ProceduralGenerator> generatorFactory = () -> new ProceduralGenerator(seed, resolver);
     chunkManager = new ChunkManager(generatorFactory, SharedWorkerPool.get().executor());
@@ -66,17 +60,18 @@ public class AbyssWorld implements WorldRenderSource {
     voxelAccess = new WorldVoxelAccess(chunkManager);
     voxelAccess.setEditListener(meshCoordinator::invalidateMeshForEdit);
     chunkLoader = new ChunkLoader(chunkManager, meshCoordinator);
-    LodTierConfig outermostTier = LodConfig.TIERS.get(LodConfig.TIERS.size() - 1);
     cylinderStreamer = new CylinderStreamer(
         WorldConstants.NEAR_FIELD_H_RADIUS,
-        WorldConstants.NEAR_FIELD_V_RADIUS,
-        outermostTier.outerHRadiusRegions(),
-        outermostTier.outerVRadiusRegions()
+        WorldConstants.NEAR_FIELD_V_RADIUS
     );
     chunkStreamer = new NearChunkStreamer(chunkLoader, cylinderStreamer);
-    lodProxyManager = new LodProxyManager(() -> new LodProxyGenerator(generatorFactory), SharedWorkerPool.get().executor());
-    lodStreamer = new LodStreamer(lodProxyManager, cylinderStreamer);
-    worldDebugStatsProvider = new WorldDebugStatsProvider(chunkManager, lodProxyManager, lodStreamer);
+    distantTerrainManager = new DistantTerrainManager(
+        () -> new DistantTerrainGenerator(generatorFactory),
+        SharedWorkerPool.get().executor()
+    );
+    distantTerrainStreamer = new DistantTerrainStreamer(distantTerrainManager, cylinderStreamer);
+    worldDebugStatsProvider = new WorldDebugStatsProvider(
+        chunkManager, distantTerrainManager, distantTerrainStreamer);
   }
 
   // ----------------------------------------------------------------
@@ -107,15 +102,15 @@ public class AbyssWorld implements WorldRenderSource {
     return worldDebugStatsProvider.snapshot();
   }
 
-  public LodProxyManager getLodProxyManager() {
-    return lodProxyManager;
+  public DistantTerrainManager getDistantTerrainManager() {
+    return distantTerrainManager;
   }
 
-  public LodStreamer getLodStreamer() {
-    return lodStreamer;
+  public DistantTerrainStreamer getDistantTerrainStreamer() {
+    return distantTerrainStreamer;
   }
 
-  /** Returns the shared cylinder streamer used by both near-field and LOD streaming. */
+  /** Returns the shared cylinder streamer used by both near-field and distant terrain streaming. */
   public CylinderStreamer getCylinderStreamer() {
     return cylinderStreamer;
   }
@@ -128,21 +123,22 @@ public class AbyssWorld implements WorldRenderSource {
     return seed;
   }
 
-  /**
-   * Shuts down background generation threads and releases resources.
-   */
+  /** Shuts down background generation threads and releases resources. */
   public void dispose() {
     if (chunkManager != null) {
       chunkManager.shutdown();
     }
-    if (lodProxyManager != null) {
-      lodProxyManager.shutdown();
+    if (distantTerrainManager != null) {
+      distantTerrainManager.shutdown();
     }
     SharedWorkerPool.get().shutdown();
   }
 
   @Override
   public WorldRenderSnapshot getRenderSnapshot() {
-    return new WorldRenderSnapshot(meshCoordinator.getRenderEntries(), lodProxyManager.getRenderEntries());
+    return new WorldRenderSnapshot(
+        meshCoordinator.getRenderEntries(),
+        distantTerrainManager.getRenderEntries()
+    );
   }
 }

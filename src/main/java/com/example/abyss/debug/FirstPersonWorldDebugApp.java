@@ -14,7 +14,7 @@ import com.example.abyss.debug.viewer.StreamingZoneWireframeRenderer;
 import com.example.abyss.util.MainThreadWatchdog;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.NearChunkStreamer;
-import com.example.abyss.world.render.lod.LodStreamer;
+import com.example.abyss.world.render.distant.DistantTerrainStreamer;
 
 /**
  * First-person debug viewer that renders streamed chunk meshes in 3D.
@@ -27,7 +27,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
     private FirstPersonDebugController controller;
     private AbyssWorld world;
     private NearChunkStreamer chunkStreamer;
-    private LodStreamer lodStreamer;
+    private DistantTerrainStreamer distantTerrainStreamer;
     private MainThreadWatchdog watchdog;
     private FirstPersonWorldRenderer worldRenderer;
     private StreamingZoneWireframeRenderer wireframeRenderer;
@@ -73,10 +73,8 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
                 FirstPersonWorldDebugConstants.INITIAL_HORIZONTAL_RADIUS,
                 FirstPersonWorldDebugConstants.INITIAL_VERTICAL_RADIUS
         );
-        // Both streamers come from the world — LodStreamer's exclusion zone is derived
-        // directly from chunkStreamer's radii, so they are always consistent.
         chunkStreamer = world.getChunkStreamer();
-        lodStreamer = world.getLodStreamer();
+        distantTerrainStreamer = world.getDistantTerrainStreamer();
 
         startupInfo = String.format(
                 "3D first-person debug viewer | Seed: %d | Start: (%.0f, %.0f, %.0f)",
@@ -87,7 +85,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         );
         updateDebugInfo();
 
-        watchdog = new MainThreadWatchdog(Thread.currentThread(), 500);
+        watchdog = new MainThreadWatchdog(Thread.currentThread(), 150);
         watchdog.start();
     }
 
@@ -96,7 +94,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         watchdog.tick();
         controller.update(Gdx.graphics.getDeltaTime());
         chunkStreamer.update(camera, Gdx.graphics.getDeltaTime());
-        lodStreamer.update(camera, Gdx.graphics.getDeltaTime());
+        distantTerrainStreamer.update(camera, Gdx.graphics.getDeltaTime());
         world.getChunkLoader().pollCompletedChunks();
         world.getMeshCoordinator().pollCompletedMeshes(worldRenderer.getShaderProgram());
         updateDebugInfo();

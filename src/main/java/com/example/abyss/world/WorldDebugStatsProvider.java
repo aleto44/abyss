@@ -3,8 +3,8 @@ package com.example.abyss.world;
 import com.example.abyss.world.meshing.ChunkMeshState;
 import com.example.abyss.world.meshing.MeshData;
 import com.example.abyss.world.meshing.MeshSectionData;
-import com.example.abyss.world.render.lod.LodProxyManager;
-import com.example.abyss.world.render.lod.LodStreamer;
+import com.example.abyss.world.render.distant.DistantTerrainManager;
+import com.example.abyss.world.render.distant.DistantTerrainStreamer;
 import com.example.abyss.world.voxel.VoxelData;
 
 import java.util.List;
@@ -19,13 +19,15 @@ public class WorldDebugStatsProvider {
     private static final long BYTES_PER_SHORT = 2L;
 
     private final ChunkManager chunkManager;
-    private final LodProxyManager lodProxyManager;
-    private final LodStreamer lodStreamer;
+    private final DistantTerrainManager distantTerrainManager;
+    private final DistantTerrainStreamer distantTerrainStreamer;
 
-    public WorldDebugStatsProvider(ChunkManager chunkManager, LodProxyManager lodProxyManager, LodStreamer lodStreamer) {
-        this.chunkManager    = chunkManager;
-        this.lodProxyManager = lodProxyManager;
-        this.lodStreamer      = lodStreamer;
+    public WorldDebugStatsProvider(ChunkManager chunkManager,
+                                   DistantTerrainManager distantTerrainManager,
+                                   DistantTerrainStreamer distantTerrainStreamer) {
+        this.chunkManager           = chunkManager;
+        this.distantTerrainManager  = distantTerrainManager;
+        this.distantTerrainStreamer  = distantTerrainStreamer;
     }
 
     public WorldDebugStats snapshot() {
@@ -40,7 +42,7 @@ public class WorldDebugStatsProvider {
                 pendingMeshCount,
                 approximateLoadedVoxelMemoryBytes,
                 approximatePendingMeshMemoryBytes,
-                lodProxyManager.getDebugStats(lodStreamer.getDemotionCount())
+                distantTerrainManager.getDebugStats(distantTerrainStreamer.getEvictionCount())
         );
     }
 

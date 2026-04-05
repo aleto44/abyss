@@ -16,7 +16,7 @@ class NearChunkStreamerTest {
     @Test
     void initialUpdateTriggersInitialSweepAndTracksSubmittedCounts() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -36,7 +36,7 @@ class NearChunkStreamerTest {
     @Test
     void secondIdleUpdateCountsKnownRequestsDuringIdleResweep() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -58,7 +58,7 @@ class NearChunkStreamerTest {
     void unloadScanStatsReflectLoaderResultsWhenIntervalExpires() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
         chunkLoader.nextUnloadStats = new ChunkLoader.UnloadStats(3, 2);
-        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 1, 0, 0));
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 1));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);
@@ -76,7 +76,7 @@ class NearChunkStreamerTest {
     @Test
     void noSweepWhenStillAndIntervalsNotReady() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
-        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0, 0, 0));
+        NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0));
 
         Vector3 observerPosition = createOriginPosition();
         streamer.updateForPosition(observerPosition, 0.016f);

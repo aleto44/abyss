@@ -47,9 +47,9 @@ public class FirstPersonWorldDebugOverlay {
         String voxelMemoryText = formatByteCount(worldDebugStats.approximateLoadedVoxelMemoryBytes());
         String pendingMeshMemoryText = formatByteCount(worldDebugStats.approximatePendingMeshMemoryBytes());
         String sweepReason = streamerStats.lastSweepReason().name();
-        String lodMeshMemoryText = formatByteCount(worldDebugStats.farFieldStats().approximateLoadedProxyMeshMemoryBytes());
+        String distantMeshMemoryText = formatByteCount(worldDebugStats.distantTerrainStats().approximateMeshMemoryBytes());
         return String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nLOD: regions=%d | pending=%d | mesh mem=%s | demotions=%d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nDistant terrain: regions=%d | pending=%d | mesh mem=%s | evictions=%d\n%s\nFPS: %d",
                 startupInfo,
                 cameraPosition.x,
                 cameraPosition.y,
@@ -75,10 +75,10 @@ public class FirstPersonWorldDebugOverlay {
                 streamerStats.totalUnloadScanCount(),
                 streamerStats.totalUnloadedChunkCount(),
                 streamerStats.totalCancelledPendingCount(),
-                worldDebugStats.farFieldStats().loadedProxyRegionCount(),
-                worldDebugStats.farFieldStats().pendingProxyMeshCount(),
-                lodMeshMemoryText,
-                worldDebugStats.farFieldStats().demotionCount(),
+                worldDebugStats.distantTerrainStats().loadedRegionCount(),
+                worldDebugStats.distantTerrainStats().pendingMeshCount(),
+                distantMeshMemoryText,
+                worldDebugStats.distantTerrainStats().evictionCount(),
                 controlSummary,
                 Gdx.graphics.getFramesPerSecond()
         );

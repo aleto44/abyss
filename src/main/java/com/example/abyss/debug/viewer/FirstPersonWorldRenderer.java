@@ -4,24 +4,15 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.graphics.GL20;
 import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
-import com.badlogic.gdx.graphics.VertexAttribute;
-import com.badlogic.gdx.graphics.VertexAttributes;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.Matrix4;
 import com.example.abyss.debug.constants.FirstPersonWorldDebugConstants;
 import com.example.abyss.world.AbyssWorld;
-import com.example.abyss.world.meshing.MeshData;
-import com.example.abyss.world.meshing.MeshSectionData;
 import com.example.abyss.world.render.ChunkCuller;
-import com.example.abyss.world.render.LodRenderEntry;
 import com.example.abyss.world.render.RenderMeshSource;
 import com.example.abyss.world.render.WorldRenderSnapshot;
-import com.example.abyss.world.render.lod.LodConfig;
-import com.example.abyss.world.render.lod.LodProxyMeshState;
-import com.example.abyss.world.render.lod.LodProxyRegion;
-import com.example.abyss.world.render.lod.LodTierConfig;
+import com.example.abyss.world.render.distant.DistantTerrainConfig;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -56,7 +47,7 @@ public class FirstPersonWorldRenderer {
 
         // Upload any proxy mesh data that arrived this frame before taking the snapshot,
         // so the snapshot captures the freshly-uploaded meshes rather than empty lists.
-        world.getLodProxyManager().uploadPendingMeshes(shaderProgram);
+        world.getDistantTerrainManager().uploadPendingMeshes(shaderProgram);
 
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
@@ -74,17 +65,8 @@ public class FirstPersonWorldRenderer {
             renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_NORMAL);
         }
 
-        // --- Far-field opaque pass ---
-        for (LodRenderEntry entry : renderSnapshot.farFieldEntries()) {
-            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
-            float regionSize = tier.regionSizeVoxels();
-            boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
-                    regionSize, regionSize, regionSize);
-            if (!isFrustumVisible) {
-                continue;
-            }
-            renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_NORMAL);
-        }
+        // --- Distant terrain opaque pass ---
+        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::opaqueMeshes);
 
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
@@ -99,17 +81,8 @@ public class FirstPersonWorldRenderer {
             renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_NORMAL);
         }
 
-        // --- Far-field transparent pass ---
-        for (LodRenderEntry entry : renderSnapshot.farFieldEntries()) {
-            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
-            float regionSize = tier.regionSizeVoxels();
-            boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
-                    regionSize, regionSize, regionSize);
-            if (!isFrustumVisible) {
-                continue;
-            }
-            renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_NORMAL);
-        }
+        // --- Distant terrain transparent pass ---
+        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::transparentMeshes);
 
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
@@ -119,6 +92,19 @@ public class FirstPersonWorldRenderer {
 
     public void dispose() {
         shaderProgram.dispose();
+    }
+
+    private void renderDistantTerrainPass(WorldRenderSnapshot renderSnapshot, PerspectiveCamera camera,
+                                          Function<RenderMeshSource, List<Mesh>> meshSelector) {
+        float regionSize = DistantTerrainConfig.REGION_SIZE_VOXELS;
+        for (RenderMeshSource entry : renderSnapshot.distantTerrainEntries()) {
+            boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
+                    regionSize, regionSize, regionSize);
+            if (!isFrustumVisible) {
+                continue;
+            }
+            renderChunkMeshes(entry, camera, meshSelector, TINT_NORMAL);
+        }
     }
 
     private void renderChunkMeshes(RenderMeshSource entry, PerspectiveCamera camera,

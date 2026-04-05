@@ -1,27 +1,22 @@
 package com.example.abyss.world.render;
 
 import com.badlogic.gdx.math.Vector3;
-import com.example.abyss.world.render.lod.LodTierConfig;
 
 import java.util.Comparator;
 
 /**
  * Shared cylinder-streaming configuration and helpers used by near-field chunk streaming
- * and far-field LOD streaming.
+ * and distant terrain background streaming.
  */
 public final class CylinderStreamer {
 
   private final int hRadius;
   private final int vRadius;
-  private final int bandHRadius;
-  private final int bandVRadius;
   private final Vector3 lastPosition = new Vector3(Float.NaN, Float.NaN, Float.NaN);
 
-  public CylinderStreamer(int hRadius, int vRadius, int bandHRadius, int bandVRadius) {
-    this.hRadius     = hRadius;
-    this.vRadius     = vRadius;
-    this.bandHRadius = bandHRadius;
-    this.bandVRadius = bandVRadius;
+  public CylinderStreamer(int hRadius, int vRadius) {
+    this.hRadius = hRadius;
+    this.vRadius = vRadius;
   }
 
   public int getHRadius() {
@@ -30,60 +25,6 @@ public final class CylinderStreamer {
 
   public int getVRadius() {
     return vRadius;
-  }
-
-  public int getBandHRadius() {
-    return bandHRadius;
-  }
-
-  public int getBandVRadius() {
-    return bandVRadius;
-  }
-
-  /**
-   * Returns true if the region-space offset (dx, dy, dz) falls inside the given tier's
-   * annulus — i.e. within the outer cylinder but outside the inner exclusion cylinder.
-   */
-  public boolean isInTierBand(int dx, int dy, int dz, LodTierConfig tier) {
-    int adx = Math.abs(dx);
-    int adz = Math.abs(dz);
-    boolean isInsideOuter = adx <= tier.outerHRadiusRegions()
-                         && adz <= tier.outerHRadiusRegions()
-                         && dy >= -tier.outerVRadiusRegions()
-                         && dy <=  tier.outerVRadiusRegions();
-    if (!isInsideOuter) {
-      return false;
-    }
-    boolean isInsideInner = adx < tier.innerHRadiusRegions()
-                         && adz < tier.innerHRadiusRegions()
-                         && dy > -tier.innerVRadiusRegions()
-                         && dy <  tier.innerVRadiusRegions();
-    return !isInsideInner;
-  }
-
-  /**
-   * Returns true if the region-space offset (dx, dy, dz) is still within the unload-safe zone
-   * for the given tier. Identical to {@link #isInTierBand} but expands the outer boundary by
-   * {@code hysteresisRegions} in each horizontal and vertical direction, so a region must drift
-   * that many extra regions beyond the load band before it is eligible for removal.
-   */
-  public boolean isInTierUnloadZone(int dx, int dy, int dz, LodTierConfig tier, int hysteresisRegions) {
-    int adx = Math.abs(dx);
-    int adz = Math.abs(dz);
-    int expandedOuterH = tier.outerHRadiusRegions() + hysteresisRegions;
-    int expandedOuterV = tier.outerVRadiusRegions() + hysteresisRegions;
-    boolean isInsideExpandedOuter = adx <= expandedOuterH
-                                 && adz <= expandedOuterH
-                                 && dy >= -expandedOuterV
-                                 && dy <=  expandedOuterV;
-    if (!isInsideExpandedOuter) {
-      return false;
-    }
-    boolean isInsideInner = adx < tier.innerHRadiusRegions()
-                         && adz < tier.innerHRadiusRegions()
-                         && dy > -tier.innerVRadiusRegions()
-                         && dy <  tier.innerVRadiusRegions();
-    return !isInsideInner;
   }
 
   public boolean isOutsideKeepZone(int dx, int dy, int dz, int horizontalPadding, int verticalPadding) {

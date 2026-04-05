@@ -10,28 +10,28 @@ import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.Matrix4;
 import com.example.abyss.WorldConstants;
 import com.example.abyss.world.render.CylinderStreamer;
-import com.example.abyss.world.render.LodRenderEntry;
 import com.example.abyss.world.render.WorldRenderSnapshot;
-import com.example.abyss.world.render.lod.LodConfig;
-import com.example.abyss.world.render.lod.LodTierConfig;
+import com.example.abyss.world.render.distant.DistantRenderEntry;
+import com.example.abyss.world.render.distant.DistantTerrainConfig;
 
 import java.util.List;
 
 /**
  * Draws axis-aligned wireframe boxes for each streaming zone in the 3D debug view.
+ * <ul>
+ *   <li>Pink  — near-field chunk cylinder</li>
+ *   <li>Green — distant terrain load horizon (generation budget wall)</li>
+ *   <li>Red   — distant terrain eviction boundary (hard removal threshold)</li>
+ *   <li>Yellow — each individually loaded distant terrain region</li>
+ * </ul>
  * Toggle with {@code F3}.
  */
 public class StreamingZoneWireframeRenderer {
 
-    private static final float[] COLOR_NEAR_FIELD = { 1.0f, 0.2f, 0.9f, 0.85f };
-
-    /** RGBA tints per LOD level index (0 = finest, higher = coarser). */
-    private static final float[][] LOD_LEVEL_COLORS = {
-        { 0.3f, 1.0f, 0.3f, 0.7f },  // level 0 — green
-        { 1.0f, 0.9f, 0.1f, 0.7f },  // level 1 — yellow
-        { 1.0f, 0.5f, 0.1f, 0.7f },  // level 2 — orange
-        { 1.0f, 0.2f, 0.2f, 0.7f },  // level 3 — red
-    };
+    private static final float[] COLOR_NEAR_FIELD        = { 1.0f, 0.2f, 0.9f, 0.85f };
+    private static final float[] COLOR_DISTANT_HORIZON  = { 0.3f, 1.0f, 0.3f, 0.25f }; // dim — rarely useful
+    private static final float[] COLOR_DISTANT_EVICTION = { 1.0f, 0.3f, 0.1f, 0.6f };  // red — hard removal boundary
+    private static final float[] COLOR_DISTANT_REGION   = { 1.0f, 0.9f, 0.1f, 0.7f };
 
     private static final String VERTEX_SHADER = """
             attribute vec3 a_position;
@@ -80,8 +80,9 @@ public class StreamingZoneWireframeRenderer {
         shader.bind();
 
         renderNearFieldZone(camera, cylinderStreamer);
-        renderAllTierBandZones(camera);
-        renderLoadedRegions(camera, snapshot.farFieldEntries());
+        renderDistantTerrainHorizon(camera);
+        renderDistantTerrainEviction(camera);
+        renderLoadedRegions(camera, snapshot.distantTerrainEntries());
 
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glEnable(GL20.GL_CULL_FACE);
@@ -109,44 +110,51 @@ public class StreamingZoneWireframeRenderer {
     }
 
     // ----------------------------------------------------------------
-    // Tier band zones
+    // Distant terrain horizon zone
     // ----------------------------------------------------------------
 
-    private void renderAllTierBandZones(PerspectiveCamera camera) {
+    private void renderDistantTerrainHorizon(PerspectiveCamera camera) {
+        float hExtent = DistantTerrainConfig.HORIZON_H_RADIUS_REGIONS
+                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
+        float vExtent = DistantTerrainConfig.HORIZON_V_RADIUS_REGIONS
+                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
         float cx = camera.position.x;
         float cy = camera.position.y;
         float cz = camera.position.z;
-        for (LodTierConfig tier : LodConfig.TIERS) {
-            float hExtent = tier.outerHRadiusChunks() * WorldConstants.CHUNK_SIZE;
-            float vExtent = tier.outerVRadiusChunks() * WorldConstants.CHUNK_SIZE;
-            float[] color = LOD_LEVEL_COLORS[tier.lodLevel() % LOD_LEVEL_COLORS.length];
-            drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
-                             cx + hExtent, cy + vExtent, cz + hExtent, color);
-        }
+        drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
+                        cx + hExtent, cy + vExtent, cz + hExtent,
+                        COLOR_DISTANT_HORIZON);
     }
 
     // ----------------------------------------------------------------
-    // Loaded LOD regions
+    // Distant terrain eviction boundary
     // ----------------------------------------------------------------
 
-    private void renderLoadedRegions(PerspectiveCamera camera, List<LodRenderEntry> farFieldEntries) {
-        for (LodRenderEntry entry : farFieldEntries) {
-            LodTierConfig tier = LodConfig.TIERS.get(entry.lodLevel());
-            float regionSize = tier.regionSizeVoxels();
-            float[] color = lodLevelColor(entry.lodLevel());
+    private void renderDistantTerrainEviction(PerspectiveCamera camera) {
+        float hExtent = DistantTerrainConfig.EVICTION_H_RADIUS_REGIONS
+                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
+        float vExtent = DistantTerrainConfig.EVICTION_V_RADIUS_REGIONS
+                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
+        float cx = camera.position.x;
+        float cy = camera.position.y;
+        float cz = camera.position.z;
+        drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
+                        cx + hExtent, cy + vExtent, cz + hExtent,
+                        COLOR_DISTANT_EVICTION);
+    }
+
+    // ----------------------------------------------------------------
+    // Loaded distant terrain regions
+    // ----------------------------------------------------------------
+
+    private void renderLoadedRegions(PerspectiveCamera camera, List<DistantRenderEntry> entries) {
+        float regionSize = DistantTerrainConfig.REGION_SIZE_VOXELS;
+        for (DistantRenderEntry entry : entries) {
             drawBox(camera,
                     entry.worldX(),              entry.worldY(),              entry.worldZ(),
                     entry.worldX() + regionSize, entry.worldY() + regionSize, entry.worldZ() + regionSize,
-                    color);
+                    COLOR_DISTANT_REGION);
         }
-    }
-
-    private static float[] lodLevelColor(int level) {
-        boolean isInRange = level >= 0 && level < LOD_LEVEL_COLORS.length;
-        if (isInRange) {
-            return LOD_LEVEL_COLORS[level];
-        }
-        return LOD_LEVEL_COLORS[LOD_LEVEL_COLORS.length - 1];
     }
 
     // ----------------------------------------------------------------
