@@ -22,11 +22,11 @@ public interface DistantTerrainPort {
     boolean isRegionKnown(DistantRegionKey key);
 
     /**
-     * Submits distant terrain mesh generation at the given priority. Lower values execute first.
+     * Submits distant terrain mesh generation for the given region.
      *
      * @return {@code true} if a new generation task was submitted
      */
-    boolean requestRegionAsync(DistantRegionKey key, int priority);
+    boolean requestRegionAsync(DistantRegionKey key);
 
     /**
      * Removes a region and cancels any pending generation task.

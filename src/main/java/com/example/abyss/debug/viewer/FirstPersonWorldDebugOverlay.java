@@ -49,7 +49,7 @@ public class FirstPersonWorldDebugOverlay {
         String sweepReason = streamerStats.lastSweepReason().name();
         String distantMeshMemoryText = formatByteCount(worldDebugStats.distantTerrainStats().approximateMeshMemoryBytes());
         return String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nDistant terrain: regions=%d | pending=%d | mesh mem=%s | evictions=%d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nDistant terrain: regions=%d | pendingRegion=%d | pendingMesh=%d | mesh mem=%s | evictions=%d | doneNotDrained=%d | stuck(>10s)=%d\n%s\nFPS: %d",
                 startupInfo,
                 cameraPosition.x,
                 cameraPosition.y,
@@ -76,9 +76,12 @@ public class FirstPersonWorldDebugOverlay {
                 streamerStats.totalUnloadedChunkCount(),
                 streamerStats.totalCancelledPendingCount(),
                 worldDebugStats.distantTerrainStats().loadedRegionCount(),
+                worldDebugStats.distantTerrainStats().pendingRegionCount(),
                 worldDebugStats.distantTerrainStats().pendingMeshCount(),
                 distantMeshMemoryText,
                 worldDebugStats.distantTerrainStats().evictionCount(),
+                worldDebugStats.distantTerrainStats().doneNotDrainedCount(),
+                worldDebugStats.distantTerrainStats().stuckTaskCount(),
                 controlSummary,
                 Gdx.graphics.getFramesPerSecond()
         );

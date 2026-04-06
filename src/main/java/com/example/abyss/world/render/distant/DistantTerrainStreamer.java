@@ -6,6 +6,7 @@ import com.example.abyss.world.render.CylinderStreamer;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Horizon-expanding streaming policy for the distant terrain background layer.
@@ -32,7 +33,10 @@ public class DistantTerrainStreamer {
 
     private static final float MOVEMENT_SWEEP_THRESHOLD        = 1.0f;
     private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS = 0.1f;
-    private static final float IDLE_RESWEEP_INTERVAL_SECONDS   = 0.5f;
+    private static final float IDLE_RESWEEP_INTERVAL_SECONDS   = 0.1f;
+
+    /** Refill the queue whenever in-flight tasks drop to this fraction of the cap. */
+    private static final float QUEUE_LOW_WATER_FRACTION = 0.5f;
 
     /** Sentinel value meaning "no region swept yet". */
     private static final int NO_REGION = Integer.MIN_VALUE;
@@ -50,6 +54,13 @@ public class DistantTerrainStreamer {
     private float movementSweepTimer;
     private float idleResweepTimer = IDLE_RESWEEP_INTERVAL_SECONDS;
     private float evictionTimer;
+
+    /**
+     * Set to {@code true} after a full scan completes without submitting any new regions —
+     * meaning the horizon is fully seeded for the current region cell. Cleared whenever the
+     * player crosses a region boundary so the next cell's candidates are queued.
+     */
+    private boolean horizonFullySeeded = false;
 
     private long evictionCount;
 
@@ -82,42 +93,75 @@ public class DistantTerrainStreamer {
 
         movementSweepTimer += deltaTime;
         idleResweepTimer   += deltaTime;
-        boolean movementSweepReady = movementSweepTimer >= MOVEMENT_SWEEP_INTERVAL_SECONDS;
-        boolean idleResweepReady   = idleResweepTimer   >= IDLE_RESWEEP_INTERVAL_SECONDS;
-
-        boolean isInitialSweep  = lastSweptRx == NO_REGION;
-        boolean isMovementSweep = isMoving && movementSweepReady;
-        boolean positionChanged = !isInitialSweep && !observerPosition.epsilonEquals(lastSweptPosition, 0.5f);
-        boolean shouldSweep     = isInitialSweep || positionChanged || isMovementSweep || idleResweepReady;
-
-        if (!shouldSweep) {
-            return;
-        }
 
         int rx = worldToRegion(Math.round(observerPosition.x));
         int ry = worldToRegion(Math.round(observerPosition.y));
         int rz = worldToRegion(Math.round(observerPosition.z));
 
-        // Region-grid guard: skip the expensive candidate scan entirely if the player
-        // has not crossed into a new region cell since the last sweep. The task queue
-        // already holds all relevant work from the previous sweep.
         boolean regionCellChanged = rx != lastSweptRx || ry != lastSweptRy || rz != lastSweptRz;
-        boolean queueHasCapacity  = terrainPort.getPendingRegionCount() < DistantTerrainConfig.MAX_IN_FLIGHT_TASKS;
-        boolean needsFullScan     = isInitialSweep || regionCellChanged || (idleResweepReady && queueHasCapacity);
+        if (regionCellChanged) {
+            horizonFullySeeded = false;
+        }
 
-        movementSweepTimer = 0f;
-        idleResweepTimer   = 0f;
-        lastSweptPosition.set(observerPosition);
-
-        if (!needsFullScan) {
+        // Once the horizon is fully seeded for this cell, only re-scan if we cross a cell boundary.
+        if (horizonFullySeeded) {
+            // Still update position tracking so positionChanged stays accurate after an eventual cell crossing.
+            lastSweptPosition.set(observerPosition);
             return;
         }
 
-        lastSweptRx = rx;
-        lastSweptRy = ry;
-        lastSweptRz = rz;
+        int     currentInFlight = terrainPort.getPendingRegionCount();
+        boolean shouldSweep     = isSweepWarranted(isMoving, currentInFlight);
 
-        submitUnknownCandidatesNearestFirst(rx, ry, rz);
+        if (shouldSweep) {
+            boolean needsFullScan = isFullCandidateScanNeeded(rx, ry, rz, currentInFlight);
+
+            // Always update position so positionChanged doesn't re-fire every frame for the same spot.
+            lastSweptPosition.set(observerPosition);
+
+            if (needsFullScan) {
+                lastSweptRx = rx;
+                lastSweptRy = ry;
+                lastSweptRz = rz;
+
+                // Timers only reset when we actually ran a scan, so the idle resweep
+                // can fire normally even while the player moves within the same region cell.
+                movementSweepTimer = 0f;
+                idleResweepTimer   = 0f;
+
+                int submitted = submitUnknownCandidatesNearestFirst(rx, ry, rz, currentInFlight);
+                boolean horizonHasNoMoreWork = submitted == 0;
+                if (horizonHasNoMoreWork) {
+                    horizonFullySeeded = true;
+                }
+            }
+        }
+    }
+
+    /** Returns true if any sweep pass should be attempted this tick. */
+    private boolean isSweepWarranted(boolean isMoving, int currentInFlight) {
+        boolean isInitialSweep     = lastSweptRx == NO_REGION;
+        boolean movementSweepReady = movementSweepTimer >= MOVEMENT_SWEEP_INTERVAL_SECONDS;
+        boolean idleResweepReady   = idleResweepTimer   >= IDLE_RESWEEP_INTERVAL_SECONDS;
+        boolean isMovementSweep    = isMoving && movementSweepReady;
+        int     lowWaterMark       = (int) (DistantTerrainConfig.MAX_IN_FLIGHT_TASKS * QUEUE_LOW_WATER_FRACTION);
+        boolean queueHungry        = currentInFlight < lowWaterMark;
+
+        return isInitialSweep || isMovementSweep || idleResweepReady || queueHungry;
+    }
+
+    /**
+     * Returns true if we must re-scan the full candidate space.
+     * False means the existing queue already contains all relevant work from the last sweep.
+     */
+    private boolean isFullCandidateScanNeeded(int rx, int ry, int rz, int currentInFlight) {
+        boolean isInitialSweep    = lastSweptRx == NO_REGION;
+        boolean idleResweepReady  = idleResweepTimer >= IDLE_RESWEEP_INTERVAL_SECONDS;
+        boolean regionCellChanged = rx != lastSweptRx || ry != lastSweptRy || rz != lastSweptRz;
+        boolean queueHungry       = currentInFlight < (int) (DistantTerrainConfig.MAX_IN_FLIGHT_TASKS * QUEUE_LOW_WATER_FRACTION);
+        boolean queueHasCapacity  = currentInFlight < DistantTerrainConfig.MAX_IN_FLIGHT_TASKS;
+
+        return isInitialSweep || regionCellChanged || queueHungry || (idleResweepReady && queueHasCapacity);
     }
 
     /**
@@ -125,17 +169,17 @@ public class DistantTerrainStreamer {
      * outward in Chebyshev shells (d=0, 1, 2, …). No list is built and no sort
      * is performed — candidates are encountered in the correct order by construction.
      * Stops as soon as the in-flight queue is full.
+     *
+     * @return the number of new regions submitted, or -1 if the loop was cut short by a full queue
      */
-    private void submitUnknownCandidatesNearestFirst(int rx, int ry, int rz) {
+    private int submitUnknownCandidatesNearestFirst(int rx, int ry, int rz, int inFlight) {
         // hRadius >= vRadius by config contract, so hRadius drives the outer shell loop.
         // The y-axis extent is independently clamped to vRadius inside each shell.
         int hRadius = DistantTerrainConfig.HORIZON_H_RADIUS_REGIONS;
         int vRadius = DistantTerrainConfig.HORIZON_V_RADIUS_REGIONS;
 
-        int inFlight = terrainPort.getPendingRegionCount();
-        int globalPriority = 0;
+        int submitted = 0;
 
-        shellLoop:
         for (int shell = 0; shell <= hRadius; shell++) {
             int dyMax = Math.min(shell, vRadius);
             for (int dy = -dyMax; dy <= dyMax; dy++) {
@@ -143,9 +187,7 @@ public class DistantTerrainStreamer {
                 for (int dz = -shell; dz <= shell; dz++) {
                     boolean isZFace = Math.abs(dz) == shell;
                     for (int dx = -shell; dx <= shell; dx++) {
-                        boolean isXFace = Math.abs(dx) == shell;
-                        // Only visit cells on the surface of this shell to avoid re-visiting
-                        // inner shells that were already processed at a lower shell index.
+                        boolean isXFace          = Math.abs(dx) == shell;
                         boolean isOnShellSurface = isXFace || isYFace || isZFace;
                         if (!isOnShellSurface) {
                             continue;
@@ -153,24 +195,32 @@ public class DistantTerrainStreamer {
 
                         boolean queueIsFull = inFlight >= DistantTerrainConfig.MAX_IN_FLIGHT_TASKS;
                         if (queueIsFull) {
-                            break shellLoop;
+                            return -1;
                         }
 
                         DistantRegionKey key = new DistantRegionKey(rx + dx, ry + dy, rz + dz);
-                        boolean isKnown = terrainPort.isRegionKnown(key);
-                        if (isKnown) {
-                            continue;
-                        }
-
-                        boolean submitted = terrainPort.requestRegionAsync(key, globalPriority);
-                        if (submitted) {
+                        boolean wasSubmitted = maybeSubmitRegion(key);
+                        if (wasSubmitted) {
                             inFlight++;
+                            submitted++;
                         }
-                        globalPriority++;
                     }
                 }
             }
         }
+        return submitted;
+    }
+
+    /**
+     * Submits a single unknown region to the async pipeline at the given priority.
+     * Returns true if the request was dispatched.
+     */
+    private boolean maybeSubmitRegion(DistantRegionKey key) {
+        boolean isUnknown = !terrainPort.isRegionKnown(key);
+        if (isUnknown) {
+            terrainPort.requestRegionAsync(key);
+        }
+        return isUnknown;
     }
 
     // ---------------------------------------------------------------
@@ -180,26 +230,26 @@ public class DistantTerrainStreamer {
     private void maybeSafetyEvict(Vector3 observerPosition, float deltaTime) {
         evictionTimer += deltaTime;
         boolean isTimeToEvict = evictionTimer >= DistantTerrainConfig.EVICTION_INTERVAL_SECONDS;
-        if (!isTimeToEvict) {
-            return;
-        }
-        evictionTimer = 0f;
 
-        int rx = worldToRegion(Math.round(observerPosition.x));
-        int ry = worldToRegion(Math.round(observerPosition.y));
-        int rz = worldToRegion(Math.round(observerPosition.z));
+        if (isTimeToEvict) {
+            evictionTimer = 0f;
 
-        List<DistantRegionKey> toEvict = new ArrayList<>();
-        for (DistantRegionKey key : terrainPort.getLoadedRegionKeys()) {
-            boolean isTooFar = isBeyondEvictionRadius(key, rx, ry, rz);
-            if (isTooFar) {
-                toEvict.add(key);
+            int rx = worldToRegion(Math.round(observerPosition.x));
+            int ry = worldToRegion(Math.round(observerPosition.y));
+            int rz = worldToRegion(Math.round(observerPosition.z));
+
+            List<DistantRegionKey> toEvict = new ArrayList<>();
+            for (DistantRegionKey key : terrainPort.getLoadedRegionKeys()) {
+                boolean isTooFar = isBeyondEvictionRadius(key, rx, ry, rz);
+                if (isTooFar) {
+                    toEvict.add(key);
+                }
             }
-        }
 
-        for (DistantRegionKey key : toEvict) {
-            terrainPort.removeRegion(key);
-            evictionCount++;
+            for (DistantRegionKey key : toEvict) {
+                terrainPort.removeRegion(key);
+                evictionCount++;
+            }
         }
     }
 
@@ -215,10 +265,6 @@ public class DistantTerrainStreamer {
 
         return horizontallyTooFar || verticallyTooFar;
     }
-
-    // ---------------------------------------------------------------
-    // Helpers
-    // ---------------------------------------------------------------
 
     private static int worldToRegion(int worldCoord) {
         return Math.floorDiv(worldCoord, DistantTerrainConfig.REGION_SIZE_VOXELS);

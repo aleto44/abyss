@@ -110,7 +110,7 @@ class DistantTerrainStreamerTest {
         @Override public boolean isRegionKnown(DistantRegionKey key) { return loadedKeys.contains(key); }
 
         @Override
-        public boolean requestRegionAsync(DistantRegionKey key, int priority) {
+        public boolean requestRegionAsync(DistantRegionKey key) {
             requestedKeys.add(key);
             loadedKeys.add(key);
             return true;

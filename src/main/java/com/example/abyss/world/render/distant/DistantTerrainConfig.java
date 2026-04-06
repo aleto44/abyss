@@ -47,16 +47,27 @@ public final class DistantTerrainConfig {
 
     /**
      * Hard cap on the number of distant terrain generation tasks in-flight at once.
-     * Prevents the shared worker pool from being flooded with distant tasks that
-     * block near-field chunk generation from completing.
      */
-    public static final int MAX_IN_FLIGHT_TASKS = 128;
+    public static final int MAX_IN_FLIGHT_TASKS = 1028;
+
+    /**
+     * Number of daemon threads dedicated exclusively to distant terrain generation.
+     * Isolated from the shared near-field pool so distant tasks can never be starved
+     * by chunk generation or meshing work.
+     */
+    public static final int WORKER_THREADS =  Math.min(6, Math.max(2, Runtime.getRuntime().availableProcessors() / 2));
 
     /**
      * How often the safety-eviction scan runs. Eviction is a last resort, not a
      * routine operation — 30 seconds is intentionally long.
      */
     public static final float EVICTION_INTERVAL_SECONDS = 30.0f;
+
+    /**
+     * A task not done after this many nanoseconds is considered stuck (worker hung or deadlocked).
+     * Surfaced in {@link DistantTerrainDebugStats#stuckTaskCount()}.
+     */
+    public static final long STUCK_TASK_THRESHOLD_NANOS = 10_000_000_000L; // 10 s
 
     private DistantTerrainConfig() {}
 }

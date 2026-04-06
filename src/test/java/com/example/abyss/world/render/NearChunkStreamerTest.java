@@ -107,16 +107,6 @@ class NearChunkStreamerTest {
         }
 
         @Override
-        public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ, int priority) {
-            return requestedKeys.add(new ChunkKey(chunkX, chunkY, chunkZ));
-        }
-
-        @Override
-        public void reprioritiseChunkAsync(int chunkX, int chunkY, int chunkZ, int newPriority) {
-            // no-op in fake
-        }
-
-        @Override
         public ChunkLoader.UnloadStats unloadChunks(Predicate<ChunkKey> shouldUnload) {
             return nextUnloadStats;
         }

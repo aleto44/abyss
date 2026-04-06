@@ -2,17 +2,14 @@ package com.example.abyss.util;
 
 import com.example.abyss.WorldConstants;
 
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * A single shared {@link ThreadPoolExecutor} intended to be passed into every
- * {@link KeyedTaskQueue} in the world pipeline (chunk gen, chunk meshing, LOD
- * proxy gen). All tasks from all queues compete in one priority queue, so a
- * high-priority near-field task will naturally preempt low-priority LOD work
- * without any cross-queue coordination logic.
+ * {@link KeyedTaskQueue} in the world pipeline (chunk gen, chunk meshing, LOD proxy gen).
  * <p>
  * Thread count is driven by {@link WorldConstants#BACKGROUND_THREAD_BUDGET},
  * which is clamped to {@code [4, 16]} and always leaves at least 2 cores free
@@ -32,7 +29,7 @@ public final class SharedWorkerPool {
                 WorldConstants.BACKGROUND_THREAD_BUDGET,
                 WorldConstants.BACKGROUND_THREAD_BUDGET,
                 0L, TimeUnit.MILLISECONDS,
-                new PriorityBlockingQueue<>(),
+                new LinkedBlockingQueue<>(),
                 runnable -> {
                     Thread thread = new Thread(runnable, "AbyssWorker-" + counter.getAndIncrement());
                     thread.setDaemon(true);

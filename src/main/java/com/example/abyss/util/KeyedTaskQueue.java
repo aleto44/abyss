@@ -8,7 +8,7 @@ import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.PriorityBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,11 +34,9 @@ import java.util.function.Supplier;
 public class KeyedTaskQueue<K, V> {
 
     /**
-     * Holds the future, the queued task, and the original work supplier together.
-     * The supplier is kept so {@link #reprioritise} can rebuild a task without
-     * requiring the caller to re-provide it.
+     * Holds the future and submission timestamp for an in-flight task.
      */
-    private record PendingEntry<V>(CompletableFuture<V> future, PrioritizedTask<V> task, Supplier<V> work) {}
+    private record PendingEntry<V>(CompletableFuture<V> future, long submittedAtNanos) {}
 
     /** Tasks currently in flight (submitted but not yet drained). */
     private final Map<K, PendingEntry<V>> pending = new ConcurrentHashMap<>();
@@ -57,20 +55,14 @@ public class KeyedTaskQueue<K, V> {
         this.externalPool = externalPool;
     }
 
-    /**
-     * A task wrapper that carries a priority score so the backing
-     * {@link PriorityBlockingQueue} executes lower-numbered (closer) tasks first.
-     */
-    private static final class PrioritizedTask<V> implements Runnable, Comparable<PrioritizedTask<V>> {
+    private static final class Task<V> implements Runnable {
 
-        private final int priority;
         private final Supplier<V> work;
         private final CompletableFuture<V> future;
 
-        PrioritizedTask(int priority, Supplier<V> work, CompletableFuture<V> future) {
-            this.priority = priority;
-            this.work     = work;
-            this.future   = future;
+        Task(Supplier<V> work, CompletableFuture<V> future) {
+            this.work   = work;
+            this.future = future;
         }
 
         @Override
@@ -83,11 +75,6 @@ public class KeyedTaskQueue<K, V> {
             } catch (Throwable t) {
                 future.completeExceptionally(t);
             }
-        }
-
-        @Override
-        public int compareTo(PrioritizedTask<V> other) {
-            return Integer.compare(this.priority, other.priority);
         }
     }
 
@@ -110,10 +97,6 @@ public class KeyedTaskQueue<K, V> {
          * Provides an externally-owned {@link ThreadPoolExecutor}.
          * The caller retains full ownership of the pool's lifecycle —
          * {@link KeyedTaskQueue#shutdown()} will be a no-op.
-         * <p>
-         * The executor's work queue must be a {@link PriorityBlockingQueue}
-         * for priority ordering to function correctly.
-         * </p>
          */
         public Builder<K, V> executor(ThreadPoolExecutor sharedExecutor) {
             this.executor = sharedExecutor;
@@ -138,7 +121,7 @@ public class KeyedTaskQueue<K, V> {
             return new ThreadPoolExecutor(
                     threadCount, threadCount,
                     0L, TimeUnit.MILLISECONDS,
-                    new PriorityBlockingQueue<>(),
+                    new LinkedBlockingQueue<>(),
                     r -> {
                         Thread t = new Thread(r, "KeyedTaskQueue-" + counter.getAndIncrement());
                         t.setDaemon(true);
@@ -153,26 +136,14 @@ public class KeyedTaskQueue<K, V> {
     // ----------------------------------------------------------------
 
     /**
-     * Submits work for the given key at the lowest priority.
-     * No-op if the key has already been submitted or completed.
+     * Submits work for the given key. No-op if the key has already been submitted or completed.
      *
-     * @return {@code true} if a new generation task was submitted; {@code false} if already known
+     * @return {@code true} if a new task was submitted; {@code false} if already known
      */
     public boolean submit(K key, Supplier<V> work) {
-        return submit(key, work, Integer.MAX_VALUE);
-    }
-
-    /**
-     * Submits work for the given key at the specified priority.
-     * Lower values execute first. No-op if already known.
-     *
-     * @param priority execution order — lower = sooner (0 is closest/highest priority)
-     * @return {@code true} if a new generation task was submitted; {@code false} if already known
-     */
-    public boolean submit(K key, Supplier<V> work, int priority) {
         CompletableFuture<V> future = new CompletableFuture<>();
-        PrioritizedTask<V> task = new PrioritizedTask<>(priority, work, future);
-        boolean alreadyKnown = pending.putIfAbsent(key, new PendingEntry<>(future, task, work)) != null;
+        Task<V> task = new Task<>(work, future);
+        boolean alreadyKnown = pending.putIfAbsent(key, new PendingEntry<>(future, System.nanoTime())) != null;
         if (alreadyKnown) {
             return false;
         }
@@ -270,34 +241,6 @@ public class KeyedTaskQueue<K, V> {
         }
     }
 
-    /**
-     * Attempts to raise the priority of a pending task that has not yet started.
-     * <p>
-     * If the task is still sitting in the queue, it is removed and resubmitted with
-     * the new priority so it moves ahead of lower-priority work. If the task has
-     * already been picked up by a worker thread, this is a no-op — the work is
-     * already in progress and cannot be reordered.
-     * </p>
-     * Has no effect if the key is not known or if {@code newPriority} is not
-     * lower than the current priority.
-     *
-     * @param newPriority the new priority — must be lower (higher urgency) than the existing one to have any effect
-     */
-    public void reprioritise(K key, int newPriority) {
-        PendingEntry<V> existing = pending.get(key);
-        if (existing == null) {
-            return;
-        }
-        boolean isStillQueued = existing.task().priority > newPriority
-                && pool.remove(existing.task());
-        if (!isStillQueued) {
-            return;
-        }
-        PrioritizedTask<V> newTask = new PrioritizedTask<>(newPriority, existing.work(), existing.future());
-        pending.put(key, new PendingEntry<>(existing.future(), newTask, existing.work()));
-        pool.execute(newTask);
-    }
-
     // ----------------------------------------------------------------
     // Queries
     // ----------------------------------------------------------------
@@ -315,6 +258,40 @@ public class KeyedTaskQueue<K, V> {
     /** Returns a snapshot of all keys currently in flight (submitted but not yet drained). */
     public Set<K> getPendingKeys() {
         return Set.copyOf(pending.keySet());
+    }
+
+    /**
+     * Counts tasks that have completed on a worker thread but have not yet been
+     * drained by {@link #pollCompleted()}. A persistently non-zero value means
+     * the caller is not draining frequently enough.
+     */
+    public int countDone() {
+        int count = 0;
+        for (PendingEntry<V> entry : pending.values()) {
+            boolean isDoneNotDrained = entry.future().isDone();
+            if (isDoneNotDrained) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /**
+     * Counts tasks whose future is <em>not</em> done and whose age exceeds
+     * {@code thresholdNanos}. A non-zero value strongly suggests a worker thread
+     * is hung or deadlocked on those tasks.
+     */
+    public int countStuck(long thresholdNanos) {
+        long now = System.nanoTime();
+        int count = 0;
+        for (PendingEntry<V> entry : pending.values()) {
+            boolean isStuck = !entry.future().isDone()
+                    && (now - entry.submittedAtNanos()) > thresholdNanos;
+            if (isStuck) {
+                count++;
+            }
+        }
+        return count;
     }
 
     // ----------------------------------------------------------------

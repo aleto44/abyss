@@ -21,7 +21,7 @@ public final class FirstPersonWorldDebugConstants {
     // Positioned just inside the Edge wall face at the Forest top boundary (y ≈ -490)
     // so the ceiling flare is immediately visible on launch. The wall inner face sits at
     // roughly r=656 at this depth; x=580 places us 76 voxels inside it, looking inward.
-    public static final Vector3 START_POSITION = new Vector3(0f, -490f, 0f);
+    public static final Vector3 START_POSITION = new Vector3(500f, 300f, 0f);
     public static final Color SKY_COLOR = new Color(0.45f, 0.68f, 0.92f, 1f);
 
     public static final String VERTEX_SHADER_SOURCE = """

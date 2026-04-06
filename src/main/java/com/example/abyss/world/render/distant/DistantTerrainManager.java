@@ -14,9 +14,11 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
@@ -43,17 +45,10 @@ public class DistantTerrainManager implements DistantTerrainPort {
      */
     private static final long UPLOAD_BUDGET_NANOS = 4_000_000L; // 4 ms
 
-    /**
-     * Priority base added to all distant terrain generation tasks in the shared worker pool.
-     * Ensures distant terrain always executes after near-field chunk generation (priority 0..~5000)
-     * and near-field meshing ({@code MeshManager.MESH_PRIORITY} = 10_000).
-     * Distance-based ordering within distant terrain is preserved as a relative offset.
-     */
-    public static final int DISTANT_TERRAIN_PRIORITY_OFFSET = 100_000_000;
-
     private final Map<DistantRegionKey, DistantRegion> loadedRegions = new LinkedHashMap<>();
     private final KeyedTaskQueue<DistantRegionKey, MeshData> taskQueue;
     private final ThreadLocal<DistantTerrainGenerator> generatorLocal;
+    private final ThreadPoolExecutor dedicatedPool;
 
     /**
      * Regions whose {@link MeshData} is ready but deferred due to budget exhaustion.
@@ -61,25 +56,33 @@ public class DistantTerrainManager implements DistantTerrainPort {
      */
     private final BudgetedDrainQueue<DistantMeshState> promotionQueue = new BudgetedDrainQueue<>();
 
-    public DistantTerrainManager(Supplier<DistantTerrainGenerator> generatorFactory,
-                                 ThreadPoolExecutor sharedPool) {
+    /**
+     * Creates a manager with its own dedicated thread pool.
+     * The pool is isolated from the shared near-field pool so distant terrain tasks
+     * can never be starved by chunk generation or meshing work.
+     */
+    public DistantTerrainManager(Supplier<DistantTerrainGenerator> generatorFactory) {
         this.generatorLocal = ThreadLocal.withInitial(generatorFactory);
+        this.dedicatedPool  = createDedicatedPool();
         this.taskQueue = KeyedTaskQueue.<DistantRegionKey, MeshData>builder()
-                .executor(sharedPool)
+                .executor(dedicatedPool)
                 .build();
     }
 
-    /** Convenience overload for tests — creates a private minimal thread pool. */
-    public DistantTerrainManager(Supplier<DistantTerrainGenerator> generatorFactory) {
-        this(generatorFactory, new ThreadPoolExecutor(
-                2, 2, 0L, TimeUnit.MILLISECONDS,
-                new PriorityBlockingQueue<>(),
+    private static ThreadPoolExecutor createDedicatedPool() {
+        AtomicInteger counter = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                DistantTerrainConfig.WORKER_THREADS,
+                DistantTerrainConfig.WORKER_THREADS,
+                0L, TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(),
                 r -> {
-                    Thread t = new Thread(r, "DistantTerrainGen-test");
+                    Thread t = new Thread(r, "DistantTerrainGen-" + counter.getAndIncrement());
                     t.setDaemon(true);
+                    t.setPriority(Thread.MIN_PRIORITY);
                     return t;
                 }
-        ));
+        );
     }
 
     // ----------------------------------------------------------------
@@ -87,13 +90,12 @@ public class DistantTerrainManager implements DistantTerrainPort {
     // ----------------------------------------------------------------
 
     @Override
-    public boolean requestRegionAsync(DistantRegionKey key, int priority) {
+    public boolean requestRegionAsync(DistantRegionKey key) {
         boolean alreadyLoaded = loadedRegions.containsKey(key);
         if (alreadyLoaded) {
             return false;
         }
-        int adjustedPriority = DISTANT_TERRAIN_PRIORITY_OFFSET + priority;
-        boolean submitted = taskQueue.submit(key, () -> generatorLocal.get().generate(key), adjustedPriority);
+        boolean submitted = taskQueue.submit(key, () -> generatorLocal.get().generate(key));
         if (submitted) {
             float worldX = key.regionX() * DistantTerrainConfig.REGION_SIZE_VOXELS;
             float worldY = key.regionY() * DistantTerrainConfig.REGION_SIZE_VOXELS;
@@ -260,9 +262,12 @@ public class DistantTerrainManager implements DistantTerrainPort {
     public DistantTerrainDebugStats getDebugStats(long evictionCount) {
         return new DistantTerrainDebugStats(
                 getLoadedRegionCount(),
+                getPendingRegionCount(),
                 getPendingMeshCount(),
                 getApproximateLoadedMeshMemoryBytes(),
-                evictionCount
+                evictionCount,
+                taskQueue.countDone(),
+                taskQueue.countStuck(DistantTerrainConfig.STUCK_TASK_THRESHOLD_NANOS)
         );
     }
 
@@ -271,6 +276,6 @@ public class DistantTerrainManager implements DistantTerrainPort {
     // ----------------------------------------------------------------
 
     public void shutdown() {
-        taskQueue.shutdown();
+        dedicatedPool.shutdownNow();
     }
 }

@@ -38,8 +38,8 @@ public class MeshManager {
      * Priority for near-field mesh tasks in the shared worker pool.
      * Intentionally higher-numbered (lower urgency) than near-field chunk gen (0..~5000)
      * so generation completes before meshing, but lower-numbered than
-     * {@link com.example.abyss.world.render.lod.LodProxyManager#LOD_PRIORITY_OFFSET}
-     * so mesh tasks execute before any LOD generation work.
+     * {@link com.example.abyss.world.render.distant.DistantTerrainManager#DISTANT_TERRAIN_PRIORITY_OFFSET}
+     * so mesh tasks execute before any distant terrain generation work.
      */
     public static final int MESH_PRIORITY = 10_000;
 
@@ -97,7 +97,7 @@ public class MeshManager {
         VoxelChunk minusZ = chunkLookup.apply(new ChunkKey(key.cx(), key.cy(), key.cz() - 1));
 
         ChunkMesher.NeighbourChunks neighbours = new ChunkMesher.NeighbourChunks(plusX, plusY, plusZ, minusX, minusY, minusZ);
-        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, neighbours), MESH_PRIORITY);
+        boolean submitted = taskQueue.submit(key, () -> ChunkMesher.buildMesh(center, neighbours));
         if (submitted) {
             renderState.setMeshQueued(true);
         }

@@ -55,7 +55,12 @@ public class FirstPersonWorldRenderer {
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
-        // --- Near-field opaque pass ---
+        // --- Distant terrain opaque pass (background) ---
+        // Renders first so near-field chunks occlude it via the Z-buffer wherever they exist.
+        // This fills the perimeter ring and all distant areas with no gaps.
+        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::opaqueMeshes);
+
+        // --- Near-field opaque pass (foreground override) ---
         for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
@@ -65,14 +70,14 @@ public class FirstPersonWorldRenderer {
             renderChunkMeshes(entry, camera, RenderMeshSource::opaqueMeshes, TINT_NORMAL);
         }
 
-        // --- Distant terrain opaque pass ---
-        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::opaqueMeshes);
-
         Gdx.gl.glEnable(GL20.GL_BLEND);
         Gdx.gl.glBlendFunc(GL20.GL_SRC_ALPHA, GL20.GL_ONE_MINUS_SRC_ALPHA);
         Gdx.gl.glDepthMask(false);
 
-        // --- Near-field transparent pass ---
+        // --- Distant terrain transparent pass (background) ---
+        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::transparentMeshes);
+
+        // --- Near-field transparent pass (foreground override) ---
         for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
@@ -80,9 +85,6 @@ public class FirstPersonWorldRenderer {
             }
             renderChunkMeshes(entry, camera, RenderMeshSource::transparentMeshes, TINT_NORMAL);
         }
-
-        // --- Distant terrain transparent pass ---
-        renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::transparentMeshes);
 
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glDisable(GL20.GL_BLEND);

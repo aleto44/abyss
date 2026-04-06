@@ -1,7 +1,7 @@
 package com.example.abyss.world.render;
 
 import com.example.abyss.world.meshing.ChunkMeshState;
-import com.example.abyss.world.render.lod.LodProxyMeshState;
+import com.example.abyss.world.render.distant.DistantMeshState;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -24,8 +24,8 @@ class MeshListRenderStateTest {
     }
 
     @Test
-    void lodProxyMeshStateInheritsSharedDirtyAndQueuedLifecycle() {
-        LodProxyMeshState renderState = new LodProxyMeshState();
+    void distantMeshStateInheritsSharedDirtyAndQueuedLifecycle() {
+        DistantMeshState renderState = new DistantMeshState();
 
         assertTrue(renderState.isMeshDirty());
         assertFalse(renderState.isMeshQueued());

@@ -80,9 +80,6 @@ public class StreamingZoneWireframeRenderer {
         shader.bind();
 
         renderNearFieldZone(camera, cylinderStreamer);
-        renderDistantTerrainHorizon(camera);
-        renderDistantTerrainEviction(camera);
-        renderLoadedRegions(camera, snapshot.distantTerrainEntries());
 
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glEnable(GL20.GL_CULL_FACE);

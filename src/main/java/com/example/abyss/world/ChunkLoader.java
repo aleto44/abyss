@@ -49,24 +49,6 @@ public class ChunkLoader {
     }
 
     /**
-     * Submits a chunk for async generation at a specific priority. Lower values execute first.
-     * No-op if the chunk is already loaded or pending.
-     *
-     * @return {@code true} if a new generation task was submitted; {@code false} if already known
-     */
-    public boolean requestChunkAsync(int chunkX, int chunkY, int chunkZ, int priority) {
-        return chunkManager.requestChunkAsync(chunkX, chunkY, chunkZ, priority);
-    }
-
-    /**
-     * Attempts to raise the priority of an already-pending chunk generation task.
-     * No-op if the chunk is not pending or has already started generating.
-     */
-    public void reprioritiseChunkAsync(int chunkX, int chunkY, int chunkZ, int newPriority) {
-        chunkManager.reprioritiseChunkAsync(chunkX, chunkY, chunkZ, newPriority);
-    }
-
-    /**
      * Drains completed async chunk results. Should be called once per frame.
      * Triggers boundary remeshing for each newly-loaded chunk, then sweeps all
      * dirty-but-unqueued chunks regardless of whether any new chunks arrived.

@@ -1,5 +1,6 @@
 package com.example.abyss.world.render;
 
+import com.example.abyss.world.render.distant.DistantRenderEntry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -25,10 +26,10 @@ class ChunkCullerTest {
     }
 
     @Test
-    void farFieldRenderEntriesExposeTheSharedRenderMeshSourceContract() {
+    void distantTerrainRenderEntriesExposeTheSharedRenderMeshSourceContract() {
         List<com.badlogic.gdx.graphics.Mesh> opaqueMeshes = List.of();
         List<com.badlogic.gdx.graphics.Mesh> transparentMeshes = List.of();
-        RenderMeshSource entry = new LodRenderEntry(4.0f, 5.0f, 6.0f, 2, opaqueMeshes, transparentMeshes);
+        RenderMeshSource entry = new DistantRenderEntry(4.0f, 5.0f, 6.0f, opaqueMeshes, transparentMeshes);
 
         assertInstanceOf(BaseRenderEntry.class, entry);
         assertEquals(4.0f, entry.worldX());
