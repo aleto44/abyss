@@ -85,7 +85,7 @@ public class FirstPersonWorldDebugApp extends ApplicationAdapter {
         );
         updateDebugInfo();
 
-        watchdog = new MainThreadWatchdog(Thread.currentThread(), 150);
+        watchdog = new MainThreadWatchdog(Thread.currentThread(), 250);
         watchdog.start();
     }
 

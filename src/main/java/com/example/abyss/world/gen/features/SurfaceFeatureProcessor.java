@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.ColumnVoxelEvaluator;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerFeatureProcessor;
@@ -22,7 +23,7 @@ import com.example.abyss.world.voxel.VoxelType;
  * No vegetation, plateau, or shrub logic — those are deprecated.
  * </p>
  */
-public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
+public class SurfaceFeatureProcessor implements LayerFeatureProcessor, ColumnVoxelEvaluator {
 
     // ---- Ring geometry ----
     //
@@ -212,7 +213,44 @@ public class SurfaceFeatureProcessor implements LayerFeatureProcessor {
     }
 
     // ---------------------------------------------------------------
-    // Height computation — spec steps 1–3
+    // ColumnVoxelEvaluator — used by the heightmap fast path
+    // ---------------------------------------------------------------
+
+    /** Immutable per-column state: top solid world Y and the layer floor. */
+    private record SurfaceColumnContext(int topSolidY, int layerFloor)
+            implements ColumnVoxelEvaluator.ColumnContext {}
+
+    @Override
+    public ColumnVoxelEvaluator.ColumnContext prepareColumn(int wx, int wz, GenConfigResolver resolver) {
+        float innerSlopeStart = innerSlopeStart(resolver);
+        RingGeometry ring     = RingGeometry.from(innerSlopeStart);
+        int topY              = computeColumnHeight(wx, wz, innerSlopeStart, ring);
+        return new SurfaceColumnContext(topY, Layer.SURFACE.getYEnd());
+    }
+
+    /**
+     * Mirrors the {@link #fillColumn} logic:
+     * <ul>
+     *   <li>Below the layer floor → {@code null} (Edge layer; not our voxel)</li>
+     *   <li>At or below topSolidY → {@link VoxelType#STONE} (solid mountain)</li>
+     *   <li>Above topSolidY → {@link VoxelType#AIR}</li>
+     * </ul>
+     */
+    @Override
+    public VoxelType evaluateVoxelType(int wx, int wy, int wz,
+                                       ColumnVoxelEvaluator.ColumnContext ctx) {
+        SurfaceColumnContext surface = (SurfaceColumnContext) ctx;
+        boolean isBelowLayerFloor = wy < surface.layerFloor();
+        if (isBelowLayerFloor) {
+            return null; // belongs to Edge layer — not our voxel
+        }
+        boolean isSolidMountain = wy <= surface.topSolidY()
+                                  && surface.topSolidY() > surface.layerFloor();
+        return isSolidMountain ? VoxelType.STONE : VoxelType.AIR;
+    }
+
+    // ---------------------------------------------------------------
+    // LayerFeatureProcessor.process — full chunk generation path (unchanged)
     // ---------------------------------------------------------------
 
     /**

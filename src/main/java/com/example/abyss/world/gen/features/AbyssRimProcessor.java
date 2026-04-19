@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.ColumnVoxelEvaluator;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerTransitionFeatureProcessor;
@@ -35,7 +36,7 @@ import com.example.abyss.world.voxel.VoxelType;
  * </ul>
  * </p>
  */
-public class AbyssRimProcessor implements LayerTransitionFeatureProcessor {
+public class AbyssRimProcessor implements LayerTransitionFeatureProcessor, ColumnVoxelEvaluator {
 
     /**
      * How many voxels above y=0 the trim pass reaches.
@@ -67,6 +68,61 @@ public class AbyssRimProcessor implements LayerTransitionFeatureProcessor {
         rimErosionNoise.SetFractalOctaves(EdgeVoidGeometry.RIM_EROSION_OCTAVES);
         rimErosionNoise.SetFrequency(EdgeVoidGeometry.RIM_EROSION_FREQUENCY);
     }
+
+    // ---------------------------------------------------------------
+    // ColumnVoxelEvaluator — used by the heightmap fast path
+    // ---------------------------------------------------------------
+
+    /** Immutable per-column state for the rim-trim zone evaluation. */
+    private record RimColumnContext(
+            float radialDist,
+            float jitteredRadius,
+            float innerSlopeStart,
+            int rimY,
+            int trimTop
+    ) implements ColumnVoxelEvaluator.ColumnContext {}
+
+    @Override
+    public ColumnVoxelEvaluator.ColumnContext prepareColumn(int wx, int wz, GenConfigResolver resolver) {
+        int   rimY            = Layer.SURFACE.getYEnd();
+        int   trimTop         = rimY + TRIM_DEPTH;
+        float voidRadiusAtRim = resolver.resolve(Layer.THE_EDGE.getYStart(), Layer.THE_EDGE).shaftDiameter() * 0.5f;
+        float innerSlopeStart = resolveInnerSlopeStart(resolver);
+        float radialDist      = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+        // Mirror AbyssRimProcessor.process: rim erosion sampled at y=0 (XZ-stable at the rim).
+        float voidJitter      = voidJitterNoise.GetNoise(wx, wz) * EdgeVoidGeometry.VOID_JITTER_AMPLITUDE;
+        float erosionSample   = rimErosionNoise.GetNoise(wx, 0f, wz) * 0.5f + 0.5f;
+        float rimErosion      = erosionSample * EdgeVoidGeometry.RIM_EROSION_AMPLITUDE;
+        float jitteredRadius  = voidRadiusAtRim + voidJitter + rimErosion;
+        return new RimColumnContext(radialDist, jitteredRadius, innerSlopeStart, rimY, trimTop);
+    }
+
+    /**
+     * Returns {@link VoxelType#AIR} for voxels in the rim-trim band that fall inside
+     * the jittered void radius, otherwise {@code null} (the caller handles them).
+     * Mirrors the carve condition in {@link #process} exactly.
+     */
+    @Override
+    public VoxelType evaluateVoxelType(int wx, int wy, int wz, ColumnVoxelEvaluator.ColumnContext ctx) {
+        RimColumnContext rim     = (RimColumnContext) ctx;
+        boolean isInTrimBand    = wy >= rim.rimY() && wy <= rim.trimTop();
+        if (!isInTrimBand) {
+            return null;
+        }
+        boolean isWithinLipZone = rim.radialDist() <= rim.innerSlopeStart();
+        if (!isWithinLipZone) {
+            return null;
+        }
+        boolean isInsideVoid = rim.radialDist() < rim.jitteredRadius();
+        if (isInsideVoid) {
+            return VoxelType.AIR;
+        }
+        return null;
+    }
+
+    // ---------------------------------------------------------------
+    // LayerTransitionFeatureProcessor
+    // ---------------------------------------------------------------
 
     @Override
     public boolean shouldProcess(int worldBaseX, int worldBaseY, int worldBaseZ, GenConfigResolver resolver) {

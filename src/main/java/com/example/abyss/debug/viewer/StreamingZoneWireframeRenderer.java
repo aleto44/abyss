@@ -28,10 +28,8 @@ import java.util.List;
  */
 public class StreamingZoneWireframeRenderer {
 
-    private static final float[] COLOR_NEAR_FIELD        = { 1.0f, 0.2f, 0.9f, 0.85f };
-    private static final float[] COLOR_DISTANT_HORIZON  = { 0.3f, 1.0f, 0.3f, 0.25f }; // dim — rarely useful
-    private static final float[] COLOR_DISTANT_EVICTION = { 1.0f, 0.3f, 0.1f, 0.6f };  // red — hard removal boundary
-    private static final float[] COLOR_DISTANT_REGION   = { 1.0f, 0.9f, 0.1f, 0.7f };
+    private static final float[] COLOR_NEAR_FIELD      = { 1.0f, 0.2f, 0.9f, 0.85f };
+    private static final float[] COLOR_DISTANT_REGION = { 1.0f, 0.9f, 0.1f, 0.7f };
 
     private static final String VERTEX_SHADER = """
             attribute vec3 a_position;
@@ -80,6 +78,7 @@ public class StreamingZoneWireframeRenderer {
         shader.bind();
 
         renderNearFieldZone(camera, cylinderStreamer);
+        renderDistantRegions(camera, snapshot.distantTerrainEntries());
 
         Gdx.gl.glDepthMask(true);
         Gdx.gl.glEnable(GL20.GL_CULL_FACE);
@@ -107,49 +106,19 @@ public class StreamingZoneWireframeRenderer {
     }
 
     // ----------------------------------------------------------------
-    // Distant terrain horizon zone
+    // Distant terrain region bands
     // ----------------------------------------------------------------
 
-    private void renderDistantTerrainHorizon(PerspectiveCamera camera) {
-        float hExtent = DistantTerrainConfig.HORIZON_H_RADIUS_REGIONS
-                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
-        float vExtent = DistantTerrainConfig.HORIZON_V_RADIUS_REGIONS
-                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
-        float cx = camera.position.x;
-        float cy = camera.position.y;
-        float cz = camera.position.z;
-        drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
-                        cx + hExtent, cy + vExtent, cz + hExtent,
-                        COLOR_DISTANT_HORIZON);
-    }
+    private static final float REGION_XZ = DistantTerrainConfig.MACRO_CHUNK_SIZE_VOXELS;
+    private static final float REGION_Y  = DistantTerrainConfig.VERTICAL_DISTANT_TERRAIN_HEIGHT
+                                         * WorldConstants.CHUNK_SIZE;
 
-    // ----------------------------------------------------------------
-    // Distant terrain eviction boundary
-    // ----------------------------------------------------------------
-
-    private void renderDistantTerrainEviction(PerspectiveCamera camera) {
-        float hExtent = DistantTerrainConfig.EVICTION_H_RADIUS_REGIONS
-                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
-        float vExtent = DistantTerrainConfig.EVICTION_V_RADIUS_REGIONS
-                      * DistantTerrainConfig.REGION_SIZE_VOXELS;
-        float cx = camera.position.x;
-        float cy = camera.position.y;
-        float cz = camera.position.z;
-        drawBox(camera, cx - hExtent, cy - vExtent, cz - hExtent,
-                        cx + hExtent, cy + vExtent, cz + hExtent,
-                        COLOR_DISTANT_EVICTION);
-    }
-
-    // ----------------------------------------------------------------
-    // Loaded distant terrain regions
-    // ----------------------------------------------------------------
-
-    private void renderLoadedRegions(PerspectiveCamera camera, List<DistantRenderEntry> entries) {
-        float regionSize = DistantTerrainConfig.REGION_SIZE_VOXELS;
+    /** Draws one yellow wireframe box per loaded distant terrain region. */
+    private void renderDistantRegions(PerspectiveCamera camera, List<DistantRenderEntry> entries) {
         for (DistantRenderEntry entry : entries) {
             drawBox(camera,
-                    entry.worldX(),              entry.worldY(),              entry.worldZ(),
-                    entry.worldX() + regionSize, entry.worldY() + regionSize, entry.worldZ() + regionSize,
+                    entry.worldX(),            entry.worldY(),            entry.worldZ(),
+                    entry.worldX() + REGION_XZ, entry.worldY() + REGION_Y, entry.worldZ() + REGION_XZ,
                     COLOR_DISTANT_REGION);
         }
     }

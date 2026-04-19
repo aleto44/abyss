@@ -64,6 +64,60 @@ public class DensityFunction {
     }
 
     // ---------------------------------------------------------------
+    // Single-column direct evaluation (heightmap fast path)
+    // ---------------------------------------------------------------
+
+    /**
+     * Pre-computed XZ-only terms for a single world column.
+     * Compute once with {@link #computeColumnTerms}, then reuse across all Y values.
+     */
+    public record ColumnTerms(float shaftTerm, float boundaryTerm) {}
+
+    /**
+     * Computes shaft and boundary terms for a single world XZ position.
+     * Avoids the full 32×32 cache sweep when only one column is needed.
+     *
+     * @param wx  world X
+     * @param wz  world Z
+     * @param cfg representative config for this column (used for shaftDiameter)
+     */
+    public ColumnTerms computeColumnTerms(int wx, int wz, LayerGenConfig cfg) {
+        float shaftRadius  = cfg.shaftDiameter() / 2f;
+        float dist         = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+
+        float shaftPerturb    = shaftNoise.GetNoise(wx, 0f, wz) * (shaftRadius * 0.25f);
+        float effectiveRadius = shaftRadius + shaftPerturb;
+        float shaft           = 1f - smoothstep(effectiveRadius - SHAFT_MARGIN,
+                                                 effectiveRadius + SHAFT_MARGIN, dist);
+
+        float boundaryPerturb = boundaryNoise.GetNoise(wx, 0f, wz) * (ABYSS_BOUNDARY_RADIUS * 0.1f);
+        float effBoundary     = ABYSS_BOUNDARY_RADIUS + boundaryPerturb;
+        float boundary        = smoothstep(effBoundary - BOUNDARY_MARGIN,
+                                           effBoundary + BOUNDARY_MARGIN, dist);
+
+        return new ColumnTerms(shaft, boundary);
+    }
+
+    /**
+     * Evaluates density for a single voxel using pre-computed XZ column terms.
+     * Calls noise directly — suitable for sparse sampling (heightmap scans).
+     * Callers must set terrain noise frequency via the layer config before calling,
+     * or accept the last-set frequency.
+     *
+     * @param wx    world X
+     * @param wy    world Y
+     * @param wz    world Z
+     * @param cfg   layer config at this Y (used for amplitude and threshold)
+     * @param terms pre-computed XZ terms from {@link #computeColumnTerms}
+     */
+    public float evaluateDirect(int wx, int wy, int wz, LayerGenConfig cfg, ColumnTerms terms) {
+        terrainNoise.SetFrequency(cfg.noiseFrequency());
+        float terrain = terrainNoise.GetNoise(wx, wy, wz) * cfg.noiseAmplitude() + cfg.baseDensityThreshold();
+        float cave    = caveTerm(caveNoise.GetNoise(wx, wy, wz));
+        return terrain - terms.shaftTerm() + terms.boundaryTerm() - cave;
+    }
+
+    // ---------------------------------------------------------------
     // XZ column cache
     // ---------------------------------------------------------------
 

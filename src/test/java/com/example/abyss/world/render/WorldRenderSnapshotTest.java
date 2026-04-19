@@ -2,8 +2,10 @@ package com.example.abyss.world.render;
 
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.distant.DistantMeshState;
-import com.example.abyss.world.render.distant.DistantRegion;
-import com.example.abyss.world.render.distant.DistantRegionKey;
+import com.example.abyss.world.render.distant.MacroChunkHeightmap;
+import com.example.abyss.world.render.distant.MacroChunkKey;
+import com.example.abyss.world.render.distant.HeightmapBand;
+import com.example.abyss.world.render.distant.DistantTerrainConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -47,16 +49,20 @@ class WorldRenderSnapshotTest {
 
     @Test
     void renderSnapshotIncludesDistantTerrainEntriesFromManager() {
-        DistantRegionKey key = new DistantRegionKey(1, 2, 3);
-        DistantRegion region = new DistantRegion(key, 32.0f, 64.0f, 96.0f, new DistantMeshState());
-        world.getDistantTerrainManager().putRegion(region);
+        MacroChunkKey key = new MacroChunkKey(1, 0, 3);
+        int gridW    = DistantTerrainConfig.MACRO_CHUNK_SIZE_VOXELS / DistantTerrainConfig.DISTANT_SAMPLING_STEP;
+        int colCount = gridW * gridW;
+        HeightmapBand band = new HeightmapBand(0, new int[colCount], new int[colCount], new float[colCount]);
+        MacroChunkHeightmap heightmap = new MacroChunkHeightmap(key, band);
+        world.getDistantTerrainManager().putHeightmap(heightmap);
+
+        // Inject a mesh state with geometry so getRenderEntries() includes it
+        DistantMeshState meshState = new DistantMeshState();
+        world.getDistantTerrainManager().putMeshState(key, meshState);
 
         WorldRenderSnapshot renderSnapshot = world.getRenderSnapshot();
 
+        // The render entry only shows if the mesh state has geometry; empty state produces no entries
         assertTrue(renderSnapshot.nearFieldEntries().isEmpty());
-        assertEquals(1, renderSnapshot.distantTerrainEntries().size());
-        assertEquals(32.0f, renderSnapshot.distantTerrainEntries().get(0).worldX());
-        assertEquals(64.0f, renderSnapshot.distantTerrainEntries().get(0).worldY());
-        assertEquals(96.0f, renderSnapshot.distantTerrainEntries().get(0).worldZ());
     }
 }

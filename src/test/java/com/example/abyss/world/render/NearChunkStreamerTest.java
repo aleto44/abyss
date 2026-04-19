@@ -34,7 +34,7 @@ class NearChunkStreamerTest {
     }
 
     @Test
-    void secondIdleUpdateCountsKnownRequestsDuringIdleResweep() {
+    void secondIdleUpdateDoesNotSweepWhenStationary() {
         FakeChunkLoader chunkLoader = new FakeChunkLoader();
         NearChunkStreamer streamer = new NearChunkStreamer(chunkLoader, new CylinderStreamer(1, 0));
 
@@ -43,15 +43,9 @@ class NearChunkStreamerTest {
         streamer.updateForPosition(observerPosition, 0.30f);
 
         ChunkStreamingStats stats = streamer.getLastStats();
-        assertTrue(stats.sweepTriggered());
-        assertEquals(ChunkStreamingSweepReason.IDLE_RESWEEP, stats.lastSweepReason());
-        // loadHRadius = 2, loadVRadius = 1 → 5*3*5 = 75
-        assertEquals(75, stats.candidatesConsidered());
-        assertEquals(0, stats.submittedThisUpdate());
-        assertEquals(75, stats.skippedKnownThisUpdate());
-        assertEquals(2L, stats.totalSweepCount());
-        assertEquals(75L, stats.totalSubmittedCount());
-        assertEquals(75L, stats.totalSkippedKnownCount());
+        assertFalse(stats.sweepTriggered());
+        assertEquals(ChunkStreamingSweepReason.NONE, stats.lastSweepReason());
+        assertEquals(1L, stats.totalSweepCount());
     }
 
     @Test

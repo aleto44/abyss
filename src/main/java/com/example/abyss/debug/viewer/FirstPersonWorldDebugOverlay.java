@@ -48,8 +48,9 @@ public class FirstPersonWorldDebugOverlay {
         String pendingMeshMemoryText = formatByteCount(worldDebugStats.approximatePendingMeshMemoryBytes());
         String sweepReason = streamerStats.lastSweepReason().name();
         String distantMeshMemoryText = formatByteCount(worldDebugStats.distantTerrainStats().approximateMeshMemoryBytes());
+        String avgGenText = formatNanos(worldDebugStats.distantTerrainStats().avgGenerationNanos());
         return String.format(
-                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | budget=%s | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nDistant terrain: regions=%d | pendingRegion=%d | pendingMesh=%d | mesh mem=%s | evictions=%d | doneNotDrained=%d | stuck(>10s)=%d\n%s\nFPS: %d",
+                "%s\nPos: (%.1f, %.1f, %.1f) | Dir: (%.2f, %.2f, %.2f)\nLoaded chunks: %d | Pending chunks: %d | Pending meshes: %d | Frustum-culled: %d\nApprox memory: voxels=%s | pending mesh CPU=%s\nStreamer: reason=%s | swept=%s | submitted=%d | known=%d | unload=%s\nStreamer totals: sweeps=%d | submitted=%d | known=%d | unload scans=%d | chunks unloaded=%d | pending canceled=%d\nDistant terrain: regions=%d | pendingRegion=%d | bandMeshes=%d | mesh mem=%s | evictions=%d | pendingGpuUpload=%d | stuck(>10s)=%d | avg gen=%s\n%s\nFPS: %d",
                 startupInfo,
                 cameraPosition.x,
                 cameraPosition.y,
@@ -67,7 +68,6 @@ public class FirstPersonWorldDebugOverlay {
                 streamerStats.sweepTriggered(),
                 streamerStats.submittedThisUpdate(),
                 streamerStats.skippedKnownThisUpdate(),
-                streamerStats.budgetExhausted(),
                 streamerStats.unloadScanTriggered(),
                 streamerStats.totalSweepCount(),
                 streamerStats.totalSubmittedCount(),
@@ -75,16 +75,31 @@ public class FirstPersonWorldDebugOverlay {
                 streamerStats.totalUnloadScanCount(),
                 streamerStats.totalUnloadedChunkCount(),
                 streamerStats.totalCancelledPendingCount(),
-                worldDebugStats.distantTerrainStats().loadedRegionCount(),
-                worldDebugStats.distantTerrainStats().pendingRegionCount(),
-                worldDebugStats.distantTerrainStats().pendingMeshCount(),
+                worldDebugStats.distantTerrainStats().loadedMacroChunkCount(),
+                worldDebugStats.distantTerrainStats().pendingCount(),
+                worldDebugStats.distantTerrainStats().activeBandMeshCount(),
                 distantMeshMemoryText,
                 worldDebugStats.distantTerrainStats().evictionCount(),
-                worldDebugStats.distantTerrainStats().doneNotDrainedCount(),
+                worldDebugStats.distantTerrainStats().pendingGpuUploadCount(),
                 worldDebugStats.distantTerrainStats().stuckTaskCount(),
+                avgGenText,
                 controlSummary,
                 Gdx.graphics.getFramesPerSecond()
         );
+    }
+
+    /** Formats a nanosecond duration as a human-readable string (ns / µs / ms). */
+    private static String formatNanos(long nanos) {
+        if (nanos == 0L) {
+            return "n/a";
+        }
+        if (nanos < 1_000L) {
+            return nanos + " ns";
+        }
+        if (nanos < 1_000_000L) {
+            return String.format("%.1f µs", nanos / 1_000.0);
+        }
+        return String.format("%.2f ms", nanos / 1_000_000.0);
     }
 
     private String formatByteCount(long bytes) {

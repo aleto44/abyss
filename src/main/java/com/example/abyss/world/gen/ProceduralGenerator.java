@@ -165,6 +165,110 @@ public class ProceduralGenerator {
     }
 
     // ---------------------------------------------------------------
+    // Heightmap fast path — avoids full chunk generation
+    // ---------------------------------------------------------------
+
+    /**
+     * Result of a single-column heightmap scan produced by {@link #scanHeightmapColumn}.
+     *
+     * @param maxSolidY   highest world Y that is solid, or {@link Integer#MIN_VALUE} if none
+     * @param minSolidY   lowest world Y that is solid, or {@link Integer#MAX_VALUE} if none
+     * @param densityScore fraction of sampled voxels that are solid [0..1]
+     */
+    public record HeightmapColumnResult(int maxSolidY, int minSolidY, float densityScore) {}
+
+    /**
+     * Scans a single world XZ column from {@code wyMax} down to {@code wyMin} at
+     * {@code yStep} intervals, evaluating density directly without generating full chunks.
+     * Use this instead of {@link #generateChunk} when only heightmap data is needed —
+     * O(H/yStep) noise evaluations vs O(32³ × bandUnits) for the chunk path.
+     *
+     * @param wx     world X of the column
+     * @param wz     world Z of the column
+     * @param wyMin  inclusive lower bound (world Y)
+     * @param wyMax  inclusive upper bound (world Y)
+     * @param yStep  vertical stride between samples (1 = exact, 2–4 = coarse)
+     */
+    public HeightmapColumnResult scanHeightmapColumn(int wx, int wz, int wyMin, int wyMax, int yStep) {
+        int centreY         = (wyMin + wyMax) / 2;
+        Layer centreLayer   = Layer.forY(centreY);
+        LayerGenConfig centreConfig = resolver.resolve(centreY, centreLayer);
+
+        // Build a per-layer evaluator map so bands that span a layer boundary (e.g. the band
+        // straddling the SURFACE/THE_EDGE seam at y=0) use the correct ColumnVoxelEvaluator
+        // for every Y sample rather than locking to the band-centre layer.  Without this,
+        // SurfaceFeatureProcessor is skipped for any sample in a boundary band whose centre
+        // resolves to THE_EDGE, leaving the surface hill invisible in the distant terrain.
+        Map<Layer, ColumnVoxelEvaluator>              layerEvaluators = new EnumMap<>(Layer.class);
+        Map<Layer, ColumnVoxelEvaluator.ColumnContext> layerCtxs       = new EnumMap<>(Layer.class);
+        for (Map.Entry<Layer, LayerFeatureProcessor> entry : featureProcessors.entrySet()) {
+            if (entry.getValue() instanceof ColumnVoxelEvaluator eval) {
+                layerEvaluators.put(entry.getKey(), eval);
+                layerCtxs.put(entry.getKey(), eval.prepareColumn(wx, wz, resolver));
+            }
+        }
+
+        // Collect transition processors that support column evaluation.
+        // They run after the feature processor in generateChunk (step 5), so they are
+        // checked last here and can override the feature-processor result — matching the
+        // full-chunk generation ordering.
+        ColumnVoxelEvaluator[]          transEvals = new ColumnVoxelEvaluator[transitionProcessors.size()];
+        ColumnVoxelEvaluator.ColumnContext[] transCtxs = new ColumnVoxelEvaluator.ColumnContext[transitionProcessors.size()];
+        int transCount = 0;
+        for (LayerTransitionFeatureProcessor tp : transitionProcessors) {
+            if (tp instanceof ColumnVoxelEvaluator eval) {
+                transEvals[transCount]  = eval;
+                transCtxs[transCount]   = eval.prepareColumn(wx, wz, resolver);
+                transCount++;
+            }
+        }
+
+        // XZ-only noise terms (shaft, boundary) — computed once regardless of evaluation path.
+        DensityFunction.ColumnTerms colTerms = densityFunction.computeColumnTerms(wx, wz, centreConfig);
+
+        int   foundMaxY    = Integer.MIN_VALUE;
+        int   foundMinY    = Integer.MAX_VALUE;
+        int   totalSamples = 0;
+        int   solidSamples = 0;
+
+        for (int wy = wyMax; wy >= wyMin; wy -= yStep) {
+            Layer layer        = Layer.forY(wy);
+            LayerGenConfig cfg = resolver.resolve(wy, layer);
+
+            // Ask the per-Y-layer evaluator first. null → fall through to density.
+            ColumnVoxelEvaluator evaluator = layerEvaluators.get(layer);
+            ColumnVoxelEvaluator.ColumnContext colCtx = layerCtxs.get(layer);
+            VoxelType type = (evaluator != null) ? evaluator.evaluateVoxelType(wx, wy, wz, colCtx) : null;
+
+            if (type == null) {
+                // Density fallback: accurate for all layers without a ColumnVoxelEvaluator.
+                float density = densityFunction.evaluateDirect(wx, wy, wz, cfg, colTerms);
+                type = density > 0f ? VoxelType.STONE : VoxelType.AIR;
+            }
+
+            // Let transition processor evaluators override (mirrors generateChunk step 5).
+            for (int ti = 0; ti < transCount; ti++) {
+                VoxelType override = transEvals[ti].evaluateVoxelType(wx, wy, wz, transCtxs[ti]);
+                if (override != null) {
+                    type = override;
+                    break;
+                }
+            }
+
+            boolean isSolid = type.isSolid();
+            totalSamples++;
+            if (isSolid) {
+                solidSamples++;
+                if (wy > foundMaxY) { foundMaxY = wy; }
+                if (wy < foundMinY) { foundMinY = wy; }
+            }
+        }
+
+        float score = totalSamples > 0 ? (float) solidSamples / totalSamples : 0f;
+        return new HeightmapColumnResult(foundMaxY, foundMinY, score);
+    }
+
+    // ---------------------------------------------------------------
     // Package-private accessors used by tests
     // ---------------------------------------------------------------
 

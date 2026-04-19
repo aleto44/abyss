@@ -29,12 +29,18 @@ public final class FirstPersonWorldDebugConstants {
             attribute vec3 a_normal;
             attribute vec4 a_color;
             uniform mat4 u_projTrans;
+            uniform vec2 u_modelOriginXZ;
+            uniform float u_modelOriginY;
             varying vec4 v_color;
             varying float v_light;
+            varying vec2 v_worldXZ;
+            varying float v_worldY;
             void main() {
                 vec3 lightDir = normalize(vec3(0.45, 0.8, 0.35));
                 v_light = max(dot(normalize(a_normal), lightDir), 0.2);
                 v_color = a_color;
+                v_worldXZ = u_modelOriginXZ + vec2(a_position.x, a_position.z);
+                v_worldY = u_modelOriginY + a_position.y;
                 gl_Position = u_projTrans * vec4(a_position, 1.0);
             }
             """;
@@ -45,8 +51,20 @@ public final class FirstPersonWorldDebugConstants {
             #endif
             varying vec4 v_color;
             varying float v_light;
+            varying vec2 v_worldXZ;
+            varying float v_worldY;
             uniform vec3 u_lodTint;
+            uniform vec2 u_nearFieldCenter;
+            uniform float u_nearFieldCenterY;
+            uniform float u_nearFieldRadius;
+            uniform float u_nearFieldRadiusY;
             void main() {
+                bool insideNearFieldXZ = u_nearFieldRadius > 0.0
+                    && distance(v_worldXZ, u_nearFieldCenter) < u_nearFieldRadius;
+                bool insideNearFieldY = abs(v_worldY - u_nearFieldCenterY) < u_nearFieldRadiusY;
+                if (insideNearFieldXZ && insideNearFieldY) {
+                    discard;
+                }
                 vec3 lit = v_color.rgb * v_light;
                 gl_FragColor = vec4(lit * u_lodTint, v_color.a);
             }

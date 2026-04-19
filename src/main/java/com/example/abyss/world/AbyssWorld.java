@@ -68,7 +68,7 @@ public class AbyssWorld implements WorldRenderSource {
     distantTerrainManager = new DistantTerrainManager(
         () -> new DistantTerrainGenerator(generatorFactory)
     );
-    distantTerrainStreamer = new DistantTerrainStreamer(distantTerrainManager, cylinderStreamer);
+    distantTerrainStreamer = new DistantTerrainStreamer(distantTerrainManager);
     worldDebugStatsProvider = new WorldDebugStatsProvider(
         chunkManager, distantTerrainManager, distantTerrainStreamer);
   }

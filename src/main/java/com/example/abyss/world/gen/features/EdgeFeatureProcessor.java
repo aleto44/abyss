@@ -1,6 +1,7 @@
 package com.example.abyss.world.gen.features;
 
 import com.example.abyss.lib.FastNoiseLite;
+import com.example.abyss.world.gen.ColumnVoxelEvaluator;
 import com.example.abyss.world.gen.GenConfigResolver;
 import com.example.abyss.world.gen.Layer;
 import com.example.abyss.world.gen.LayerFeatureProcessor;
@@ -23,7 +24,7 @@ import com.example.abyss.world.voxel.VoxelType;
  * No vegetation, ceiling blend, or traversable features — all deprecated.
  * </p>
  */
-public class EdgeFeatureProcessor implements LayerFeatureProcessor {
+public class EdgeFeatureProcessor implements LayerFeatureProcessor, ColumnVoxelEvaluator {
 
     // ---------------------------------------------------------------
     // Wall geometry constants
@@ -109,6 +110,70 @@ public class EdgeFeatureProcessor implements LayerFeatureProcessor {
         rimErosionNoise.SetFractalType(FastNoiseLite.FractalType.FBm);
         rimErosionNoise.SetFractalOctaves(EdgeVoidGeometry.RIM_EROSION_OCTAVES);
         rimErosionNoise.SetFrequency(EdgeVoidGeometry.RIM_EROSION_FREQUENCY);
+    }
+
+    // ---------------------------------------------------------------
+    // ColumnVoxelEvaluator — used by the heightmap fast path
+    // ---------------------------------------------------------------
+
+    /** Immutable XZ-stable state for one column: radial distance, jitter, and base void radius. */
+    private record EdgeColumnContext(
+            float radialDist,
+            float voidJitter,
+            float voidRadiusAtSurface
+    ) implements ColumnVoxelEvaluator.ColumnContext {}
+
+    @Override
+    public ColumnVoxelEvaluator.ColumnContext prepareColumn(int wx, int wz, GenConfigResolver resolver) {
+        float voidRadiusAtSurface = resolver.resolve(Layer.THE_EDGE.getYStart(), Layer.THE_EDGE).shaftDiameter() * 0.5f;
+        float radialDist          = (float) Math.sqrt((double) wx * wx + (double) wz * wz);
+        float voidJitter          = voidJitterNoise.GetNoise(wx, wz) * VOID_JITTER_AMPLITUDE;
+        return new EdgeColumnContext(radialDist, voidJitter, voidRadiusAtSurface);
+    }
+
+    /**
+     * Replicates the void-carve logic from {@link #process} on a per-voxel basis.
+     * Returns {@code null} for Y values outside {@code THE_EDGE} layer bounds so the
+     * caller can fall through to the density function for those positions.
+     */
+    @Override
+    public VoxelType evaluateVoxelType(int wx, int wy, int wz, ColumnVoxelEvaluator.ColumnContext ctx) {
+        int edgeTop    = Layer.THE_EDGE.getYStart();
+        int edgeBottom = Layer.THE_EDGE.getYEnd();
+        boolean isInEdgeLayer = wy <= edgeTop && wy > edgeBottom;
+        if (!isInEdgeLayer) {
+            return null;
+        }
+
+        EdgeColumnContext edge = (EdgeColumnContext) ctx;
+
+        float depthBelow      = (float) (edgeTop - wy);
+        float depthFactor     = depthBelow / 1000f;
+        float effectiveRadius = edge.voidRadiusAtSurface() + depthFactor * TAPER_PER_1000_DEPTH
+                                * edge.voidRadiusAtSurface();
+
+        float rimErosionFactor = 1f - smoothstep(0f, RIM_EROSION_DEPTH, depthBelow);
+        float erosionSample    = rimErosionNoise.GetNoise(wx, wy, wz) * 0.5f + 0.5f;
+        float rimErosion       = erosionSample * RIM_EROSION_AMPLITUDE * rimErosionFactor;
+
+        float jitteredRadius = effectiveRadius + edge.voidJitter() + rimErosion;
+
+        boolean isInVoid = edge.radialDist() < jitteredRadius;
+        if (isInVoid) {
+            return VoxelType.AIR;
+        }
+
+        float distanceBeyondVoid  = edge.radialDist() - jitteredRadius;
+        boolean isInInnerFaceBand = distanceBeyondVoid <= INNER_FACE_BAND;
+        if (isInInnerFaceBand) {
+            float perturb           = wallPerturbNoise.GetNoise(wx, wy, wz) * WALL_PERTURB_AMPLITUDE;
+            boolean carvedByPerturb = (edge.radialDist() + perturb) < jitteredRadius;
+            if (carvedByPerturb) {
+                return VoxelType.AIR;
+            }
+        }
+
+        return VoxelType.STONE;
     }
 
     // ---------------------------------------------------------------

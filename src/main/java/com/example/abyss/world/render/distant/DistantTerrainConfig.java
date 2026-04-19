@@ -1,73 +1,100 @@
 package com.example.abyss.world.render.distant;
 
 import com.example.abyss.WorldConstants;
+import com.example.abyss.world.gen.Layer;
 
 /**
- * Boot-time constants for the distant terrain background layer.
- * <p>
- * There is exactly one uniform resolution and no tier concept — every region
- * outside the near-field is generated at the same {@link #SAMPLE_STEP} and
- * {@link #REGION_SIZE_CHUNKS}. This eliminates seam artefacts at tier boundaries.
- * </p>
- * All tunables live here. Never hardcode these values elsewhere.
+ * Boot-time constants for the banded heightmap distant terrain system.
+ * All tunables live here; never hardcode these values elsewhere.
+ *
+ * Unit key:
+ *   voxels       – individual world blocks
+ *   chunks       – WorldConstants.CHUNK_SIZE voxels per side
+ *   macro-chunks – HORIZONTAL_DISTANT_TERRAIN_WIDTH chunks per side
+ *   bands        – VERTICAL_DISTANT_TERRAIN_HEIGHT chunks tall
  */
 public final class DistantTerrainConfig {
 
-    /** Side length of one distant terrain region, in chunks. */
-    public static final int REGION_SIZE_CHUNKS = 4;
+    // -------------------------------------------------------------------------
+    // Macro-chunk shape  (tunables – change these to resize the LOD grid)
+    // -------------------------------------------------------------------------
+
+    /** XZ side length of one macro-chunk, in chunks. */
+    public static final int HORIZONTAL_DISTANT_TERRAIN_WIDTH = 32;
+
+    /** Height of one vertical band, in chunks. */
+    public static final int VERTICAL_DISTANT_TERRAIN_HEIGHT = 2;
+
+    /** Voxels skipped between height-sample grid cells within a macro-chunk column. */
+    public static final int DISTANT_SAMPLING_STEP = 4;
+
+    // -------------------------------------------------------------------------
+    // Derived sizes  (computed from shape; do not edit directly)
+    // -------------------------------------------------------------------------
+
+    /** Voxel footprint of one macro-chunk side. */
+    public static final int MACRO_CHUNK_SIZE_VOXELS = HORIZONTAL_DISTANT_TERRAIN_WIDTH * WorldConstants.CHUNK_SIZE;
+
+    /** Total number of vertical bands spanning the full world height. */
+    public static final int TOTAL_BAND_COUNT =
+            (Math.floorDiv(Layer.SURFACE.getYStart(), WorldConstants.CHUNK_SIZE)
+            - Math.floorDiv(Layer.DEEP_EXTREMES.getYEnd(), WorldConstants.CHUNK_SIZE))
+            / VERTICAL_DISTANT_TERRAIN_HEIGHT;
+
+    // -------------------------------------------------------------------------
+    // World bounds
+    // -------------------------------------------------------------------------
+
+    /** Hard XZ boundary: macro-chunk coordinates with |x| or |z| beyond this are rejected. */
+    public static final int WORLD_MAX_COORD_MACRO_CHUNKS = 128;
+
+    /** Inclusive minimum valid band index (bottom of the world). */
+    public static final int WORLD_MIN_BAND_Y = 0;
+
+    /** Inclusive maximum valid band index (top of the world). */
+    public static final int WORLD_MAX_BAND_Y = TOTAL_BAND_COUNT - 1;
+
+    // -------------------------------------------------------------------------
+    // XZ load / eviction distances  (in macro-chunks)
+    // -------------------------------------------------------------------------
 
     /**
-     * Voxels skipped per height-sample grid cell.
-     * One height sample is taken per {@code SAMPLE_STEP × SAMPLE_STEP} voxel column.
+     * Radius of the XZ load region around the player.
+     * 6 macro-chunks ≈ 6 144 voxels — enough to cover the full mountain ring around the abyss shaft.
      */
-    public static final int SAMPLE_STEP = 4;
-
-    /** World-voxel footprint of one region side. */
-    public static final int REGION_SIZE_VOXELS = REGION_SIZE_CHUNKS * WorldConstants.CHUNK_SIZE;
+    public static final int LOAD_DISTANCE_MACRO_CHUNKS = 2;
 
     /**
-     * Horizontal coverage radius in regions. The streamer will submit new regions up to this
-     * distance from the player. Acts as a generation cap — not a streaming band edge.
+     * Hysteresis gap beyond LOAD_DISTANCE_MACRO_CHUNKS before a key is evicted.
+     * Prevents thrashing when the player hovers near a load-region edge.
      */
-    public static final int HORIZON_H_RADIUS_REGIONS = 64;
+    public static final int EVICTION_PADDING_MACRO_CHUNKS = 2;
 
-    /** Vertical coverage radius in regions. Generous to cover the full abyss depth. */
-    public static final int HORIZON_V_RADIUS_REGIONS = 32;
+    // -------------------------------------------------------------------------
+    // Y load / eviction distances  (in bands)
+    // -------------------------------------------------------------------------
+
+    /** Chunk-space vertical render radius used to derive LOAD_DISTANCE_BANDS_Y. */
+    public static final int BAND_Y_RENDER_DISTANCE_CHUNKS = 32;
 
     /**
-     * Hard eviction radius in regions. Regions further than this are eligible for removal
-     * even under the permanent-background model. Exists only to cap VRAM when the player
-     * teleports extreme distances. Set well beyond {@link #HORIZON_H_RADIUS_REGIONS} so
-     * that previously-loaded background terrain is kept during normal backtracking.
+     * Vertical radius around the player's band within which bands are meshed.
+     * 64 chunks ≈ 2 048 voxels — covers ~4 full abyss layers in each direction.
      */
-    public static final int EVICTION_H_RADIUS_REGIONS = 80;
-
-    /** Vertical counterpart to {@link #EVICTION_H_RADIUS_REGIONS}. */
-    public static final int EVICTION_V_RADIUS_REGIONS = 40;
+    public static final int LOAD_DISTANCE_BANDS_Y = BAND_Y_RENDER_DISTANCE_CHUNKS / VERTICAL_DISTANT_TERRAIN_HEIGHT;
 
     /**
-     * Hard cap on the number of distant terrain generation tasks in-flight at once.
+     * Hysteresis gap beyond LOAD_DISTANCE_BANDS_Y before a band-slab is evicted.
+     * Prevents thrashing when the player hovers near a vertical load boundary.
      */
-    public static final int MAX_IN_FLIGHT_TASKS = 1028;
+    public static final int EVICTION_PADDING_BANDS_Y = 3;
 
-    /**
-     * Number of daemon threads dedicated exclusively to distant terrain generation.
-     * Isolated from the shared near-field pool so distant tasks can never be starved
-     * by chunk generation or meshing work.
-     */
-    public static final int WORKER_THREADS =  Math.min(6, Math.max(2, Runtime.getRuntime().availableProcessors() / 2));
+    // -------------------------------------------------------------------------
+    // Worker threads
+    // -------------------------------------------------------------------------
 
-    /**
-     * How often the safety-eviction scan runs. Eviction is a last resort, not a
-     * routine operation — 30 seconds is intentionally long.
-     */
-    public static final float EVICTION_INTERVAL_SECONDS = 30.0f;
-
-    /**
-     * A task not done after this many nanoseconds is considered stuck (worker hung or deadlocked).
-     * Surfaced in {@link DistantTerrainDebugStats#stuckTaskCount()}.
-     */
-    public static final long STUCK_TASK_THRESHOLD_NANOS = 10_000_000_000L; // 10 s
+    /** Dedicated distant-terrain worker threads, isolated from the shared near-field pool. */
+    public static final int WORKER_THREADS = Math.min(6, Math.max(2, Runtime.getRuntime().availableProcessors() / 2));
 
     private DistantTerrainConfig() {}
 }

@@ -41,6 +41,11 @@ public class BudgetedDrainQueue<T> {
         queue.add(item);
     }
 
+    /** Returns the approximate number of items currently waiting in the queue. Safe to call from any thread. */
+    public int size() {
+        return queue.size();
+    }
+
     /**
      * Drains items from the queue, applying {@code action} to each, until
      * {@code budgetNanos} of wall-clock time has elapsed or the queue is empty.

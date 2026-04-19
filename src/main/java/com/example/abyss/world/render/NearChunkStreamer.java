@@ -41,16 +41,6 @@ public class NearChunkStreamer {
    * Chunk-boundary crossings still trigger an immediate sweep.
    */
   private static final float MOVEMENT_SWEEP_INTERVAL_SECONDS = 0.1f;
-  /**
-   * Maximum number of chunk requests submitted in a single sweep.
-   * Caps queue depth so the generation workers are not flooded with thousands of tasks at once.
-   */
-  private static final int MAX_SUBMISSIONS_PER_SWEEP = 512;
-  /**
-   * How often (in seconds) a re-sweep fires unconditionally.
-   * Needed because {@link #MAX_SUBMISSIONS_PER_SWEEP} caps each sweep.
-   */
-  private static final float IDLE_RESWEEP_INTERVAL_SECONDS = 0.1f;
 
   private final ChunkLoader chunkLoader;
   private final CylinderStreamer cylinderStreamer;
@@ -61,7 +51,6 @@ public class NearChunkStreamer {
 
   private float unloadTimer = 0f;
   private float movementSweepTimer = 0f;
-  private float idleResweepTimer = IDLE_RESWEEP_INTERVAL_SECONDS;
 
   private final ChunkStreamingStatsTracker statsTracker = new ChunkStreamingStatsTracker();
 
@@ -101,23 +90,19 @@ public class NearChunkStreamer {
     boolean playerMoving = cylinderStreamer.updateAndCheckMovement(observerPosition, deltaTime, MOVEMENT_SWEEP_THRESHOLD);
 
     movementSweepTimer += deltaTime;
-    idleResweepTimer += deltaTime;
     boolean movementSweepReady = movementSweepTimer >= MOVEMENT_SWEEP_INTERVAL_SECONDS;
-    boolean idleResweepReady = idleResweepTimer >= IDLE_RESWEEP_INTERVAL_SECONDS;
 
     ChunkStreamingSweepReason sweepReason = determineSweepReason(
         playerChunkChanged,
         playerMoving,
-        movementSweepReady,
-        idleResweepReady
+        movementSweepReady
     );
     boolean shouldResweep = sweepReason != ChunkStreamingSweepReason.NONE;
     if (!shouldResweep) {
-      return SweepOutcome.notTriggered(playerChunkChanged, playerMoving, movementSweepReady, idleResweepReady);
+      return SweepOutcome.notTriggered(playerChunkChanged, playerMoving, movementSweepReady);
     }
 
     movementSweepTimer = 0f;
-    idleResweepTimer = 0f;
     lastSweptPcx = pcx;
     lastSweptPcy = pcy;
     lastSweptPcz = pcz;
@@ -128,11 +113,9 @@ public class NearChunkStreamer {
         playerChunkChanged,
         playerMoving,
         movementSweepReady,
-        idleResweepReady,
         submissionStats.candidatesConsidered(),
         submissionStats.submitted(),
-        submissionStats.skippedKnown(),
-        submissionStats.budgetExhausted()
+        submissionStats.skippedKnown()
     );
   }
 
@@ -163,8 +146,7 @@ public class NearChunkStreamer {
   private ChunkStreamingSweepReason determineSweepReason(
       boolean playerChunkChanged,
       boolean playerMoving,
-      boolean movementSweepReady,
-      boolean idleResweepReady
+      boolean movementSweepReady
   ) {
     boolean isInitialSweep = lastSweptPcx == Integer.MIN_VALUE;
     if (isInitialSweep) {
@@ -176,9 +158,6 @@ public class NearChunkStreamer {
     boolean isMovementSweep = playerMoving && movementSweepReady;
     if (isMovementSweep) {
       return ChunkStreamingSweepReason.MOVING;
-    }
-    if (idleResweepReady) {
-      return ChunkStreamingSweepReason.IDLE_RESWEEP;
     }
     return ChunkStreamingSweepReason.NONE;
   }
@@ -203,29 +182,23 @@ public class NearChunkStreamer {
 
     candidates.sort(cylinderStreamer.createNearestFirstComparator(WorldConstants.CHUNK_SIZE, camPos));
 
-    StreamingSubmissionBudget budget = new StreamingSubmissionBudget(MAX_SUBMISSIONS_PER_SWEEP);
     int skippedKnown = 0;
-    int candidatesConsidered = 0;
+    int submitted = 0;
     for (int[] candidate : candidates) {
-      if (budget.isExhausted()) {
-        break;
-      }
-      candidatesConsidered++;
       boolean wasNew = chunkLoader.requestChunkAsync(candidate[0], candidate[1], candidate[2]);
       if (wasNew) {
-        budget.recordSubmission();
+        submitted++;
       } else {
         skippedKnown++;
       }
     }
-    return new SubmissionStats(candidatesConsidered, budget.getSubmitted(), skippedKnown, budget.isExhausted());
+    return new SubmissionStats(candidates.size(), submitted, skippedKnown);
   }
 
   private record SubmissionStats(
       int candidatesConsidered,
       int submitted,
-      int skippedKnown,
-      boolean budgetExhausted
+      int skippedKnown
   ) {
   }
 
@@ -235,17 +208,14 @@ public class NearChunkStreamer {
       boolean playerChunkChanged,
       boolean playerMoving,
       boolean movementSweepReady,
-      boolean idleResweepReady,
       int candidatesConsidered,
       int submitted,
-      int skippedKnown,
-      boolean budgetExhausted
+      int skippedKnown
   ) {
     private static SweepOutcome notTriggered(
         boolean playerChunkChanged,
         boolean playerMoving,
-        boolean movementSweepReady,
-        boolean idleResweepReady
+        boolean movementSweepReady
     ) {
       return new SweepOutcome(
           ChunkStreamingSweepReason.NONE,
@@ -253,11 +223,9 @@ public class NearChunkStreamer {
           playerChunkChanged,
           playerMoving,
           movementSweepReady,
-          idleResweepReady,
           0,
           0,
-          0,
-          false
+          0
       );
     }
 
@@ -266,11 +234,9 @@ public class NearChunkStreamer {
         boolean playerChunkChanged,
         boolean playerMoving,
         boolean movementSweepReady,
-        boolean idleResweepReady,
         int candidatesConsidered,
         int submitted,
-        int skippedKnown,
-        boolean budgetExhausted
+        int skippedKnown
     ) {
       return new SweepOutcome(
           reason,
@@ -278,11 +244,9 @@ public class NearChunkStreamer {
           playerChunkChanged,
           playerMoving,
           movementSweepReady,
-          idleResweepReady,
           candidatesConsidered,
           submitted,
-          skippedKnown,
-          budgetExhausted
+          skippedKnown
       );
     }
   }

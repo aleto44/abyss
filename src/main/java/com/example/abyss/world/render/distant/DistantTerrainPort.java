@@ -3,42 +3,33 @@ package com.example.abyss.world.render.distant;
 import java.util.List;
 
 /**
- * Streaming-facing contract for distant terrain background region management.
- * <p>
+ * Streaming-facing contract for distant terrain macro-chunk management.
  * {@link DistantTerrainStreamer} depends only on this interface, keeping it decoupled
- * from the concrete {@link DistantTerrainManager} implementation and enabling lightweight
- * test doubles.
- * </p>
+ * from the concrete {@link DistantTerrainManager} and enabling lightweight test doubles.
  */
 public interface DistantTerrainPort {
 
-    /** Drains completed distant terrain mesh results. Call once per frame on the main thread. */
+    /** Drains completed heightmap results and triggers mesh builds for visible bands. Call once per frame on the main thread. */
     void pollCompletedMeshes();
 
-    /**
-     * Returns {@code true} if the region is either loaded or pending generation.
-     * Used by the streamer to avoid re-submitting known regions.
-     */
-    boolean isRegionKnown(DistantRegionKey key);
+    /** Returns {@code true} if the macro-chunk is either loaded or pending generation. */
+    boolean isMacroChunkKnown(MacroChunkKey key);
 
     /**
-     * Submits distant terrain mesh generation for the given region.
+     * Submits heightmap generation for the given macro-chunk.
      *
      * @return {@code true} if a new generation task was submitted
      */
-    boolean requestRegionAsync(DistantRegionKey key);
+    boolean requestMacroChunkAsync(MacroChunkKey key);
 
-    /**
-     * Removes a region and cancels any pending generation task.
-     * Intended only for the safety-eviction path — not called during normal streaming.
-     */
-    DistantRegion removeRegion(DistantRegionKey key);
+    /** Removes a macro-chunk and cancels any pending generation task. */
+    void removeMacroChunk(MacroChunkKey key);
 
-    /** Number of regions whose generation task is currently in-flight. */
-    int getPendingRegionCount();
+    /** Number of macro-chunks whose generation task is currently in-flight. */
+    int getPendingCount();
 
-    /** Returns the keys of all currently loaded regions. */
-    List<DistantRegionKey> getLoadedRegionKeys();
+    /** Returns the keys of all currently loaded macro-chunks. */
+    List<MacroChunkKey> getLoadedKeys();
 
     /** Render entries for the current frame. */
     List<DistantRenderEntry> getRenderEntries();

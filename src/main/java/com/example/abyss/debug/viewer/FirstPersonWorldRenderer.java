@@ -6,6 +6,7 @@ import com.badlogic.gdx.graphics.Mesh;
 import com.badlogic.gdx.graphics.PerspectiveCamera;
 import com.badlogic.gdx.graphics.glutils.ShaderProgram;
 import com.badlogic.gdx.math.Matrix4;
+import com.example.abyss.WorldConstants;
 import com.example.abyss.debug.constants.FirstPersonWorldDebugConstants;
 import com.example.abyss.world.AbyssWorld;
 import com.example.abyss.world.render.ChunkCuller;
@@ -22,6 +23,12 @@ import java.util.function.Function;
 public class FirstPersonWorldRenderer {
 
     private static final float[] TINT_NORMAL = { 1.0f, 1.0f, 1.0f };
+    /** XZ radius of the cylindrical exclusion zone that hides distant terrain inside the near-field. */
+    private static final float NEAR_FIELD_EXCLUSION_RADIUS =
+            WorldConstants.NEAR_FIELD_H_RADIUS * WorldConstants.CHUNK_SIZE;
+    /** Y half-extent of the cylindrical exclusion zone, matching the near-field vertical radius. */
+    private static final float NEAR_FIELD_EXCLUSION_RADIUS_Y =
+            WorldConstants.NEAR_FIELD_V_RADIUS * WorldConstants.CHUNK_SIZE;
     private final Matrix4 modelMatrix = new Matrix4();
     private final Matrix4 modelViewProjectionMatrix = new Matrix4();
     private final ChunkCuller chunkCuller = new ChunkCuller();
@@ -56,11 +63,18 @@ public class FirstPersonWorldRenderer {
         Gdx.gl.glDisable(GL20.GL_BLEND);
 
         // --- Distant terrain opaque pass (background) ---
-        // Renders first so near-field chunks occlude it via the Z-buffer wherever they exist.
-        // This fills the perimeter ring and all distant areas with no gaps.
+        // Fragments inside the near-field cylinder (XZ radius + Y half-extent) are discarded
+        // so underground/all-air near-chunks that write no depth geometry don't let distant
+        // terrain show through. Y-bounding ensures cliff faces below the player still render.
+        shaderProgram.setUniformf("u_nearFieldCenter", camera.position.x, camera.position.z);
+        shaderProgram.setUniformf("u_nearFieldCenterY", camera.position.y);
+        shaderProgram.setUniformf("u_nearFieldRadius", NEAR_FIELD_EXCLUSION_RADIUS);
+        shaderProgram.setUniformf("u_nearFieldRadiusY", NEAR_FIELD_EXCLUSION_RADIUS_Y);
         renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::opaqueMeshes);
 
         // --- Near-field opaque pass (foreground override) ---
+        // Disable the exclusion zone so near-field geometry is never discarded.
+        shaderProgram.setUniformf("u_nearFieldRadius", 0.0f);
         for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
@@ -75,9 +89,14 @@ public class FirstPersonWorldRenderer {
         Gdx.gl.glDepthMask(false);
 
         // --- Distant terrain transparent pass (background) ---
+        shaderProgram.setUniformf("u_nearFieldCenter", camera.position.x, camera.position.z);
+        shaderProgram.setUniformf("u_nearFieldCenterY", camera.position.y);
+        shaderProgram.setUniformf("u_nearFieldRadius", NEAR_FIELD_EXCLUSION_RADIUS);
+        shaderProgram.setUniformf("u_nearFieldRadiusY", NEAR_FIELD_EXCLUSION_RADIUS_Y);
         renderDistantTerrainPass(renderSnapshot, camera, RenderMeshSource::transparentMeshes);
 
         // --- Near-field transparent pass (foreground override) ---
+        shaderProgram.setUniformf("u_nearFieldRadius", 0.0f);
         for (RenderMeshSource entry : renderSnapshot.nearFieldEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera);
             if (!isFrustumVisible) {
@@ -98,7 +117,12 @@ public class FirstPersonWorldRenderer {
 
     private void renderDistantTerrainPass(WorldRenderSnapshot renderSnapshot, PerspectiveCamera camera,
                                           Function<RenderMeshSource, List<Mesh>> meshSelector) {
-        float regionSize = DistantTerrainConfig.REGION_SIZE_VOXELS;
+        // Push distant geometry slightly away from the camera in clip space so near
+        // chunks always win the depth test at the LOD transition boundary.
+        Gdx.gl.glEnable(GL20.GL_POLYGON_OFFSET_FILL);
+        Gdx.gl.glPolygonOffset(1.0f, 1.0f);
+
+        float regionSize = DistantTerrainConfig.MACRO_CHUNK_SIZE_VOXELS;
         for (RenderMeshSource entry : renderSnapshot.distantTerrainEntries()) {
             boolean isFrustumVisible = chunkCuller.isFrustumVisible(entry, camera,
                     regionSize, regionSize, regionSize);
@@ -107,6 +131,9 @@ public class FirstPersonWorldRenderer {
             }
             renderChunkMeshes(entry, camera, meshSelector, TINT_NORMAL);
         }
+
+        Gdx.gl.glPolygonOffset(0.0f, 0.0f);
+        Gdx.gl.glDisable(GL20.GL_POLYGON_OFFSET_FILL);
     }
 
     private void renderChunkMeshes(RenderMeshSource entry, PerspectiveCamera camera,
@@ -123,6 +150,8 @@ public class FirstPersonWorldRenderer {
         modelViewProjectionMatrix.set(camera.combined).mul(modelMatrix);
         shaderProgram.setUniformMatrix("u_projTrans", modelViewProjectionMatrix);
         shaderProgram.setUniform3fv("u_lodTint", tint, 0, 3);
+        shaderProgram.setUniformf("u_modelOriginXZ", entry.worldX(), entry.worldZ());
+        shaderProgram.setUniformf("u_modelOriginY", entry.worldY());
     }
 
     private void renderMesh(Mesh mesh) {
